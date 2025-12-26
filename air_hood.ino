@@ -2,6 +2,7 @@
 #include <arduino_homekit_server.h>
 #include <DHT.h>
 #include "wifi_info.h"
+#include "display.h"
 
 #define LOG_D(fmt, ...) printf_P(PSTR(fmt "\n"), ##__VA_ARGS__);
 
@@ -23,6 +24,7 @@ DHT dht(DHT_PIN, DHT_TYPE);
 void setup()
 {
 	Serial.begin(115200);
+	display_setup();
 	dht.begin();
 	wifi_connect(); // in wifi_info.h
 	// homekit_storage_reset(); // to remove the previous HomeKit pairing storage
@@ -84,6 +86,7 @@ void apply_switch_state(bool on, bool notify, const char *reason)
 			LOG_D("Fan: %s", on ? "ON" : "OFF");
 		}
 	}
+	display_update(last_temperature, last_humidity, humidity_baseline, switch_state, manual_override_active(millis()));
 }
 
 void update_switch_from_humidity(float humidity, uint32_t now)
@@ -148,6 +151,7 @@ void report_environment()
 	if (isnan(humidity) || isnan(temperature))
 	{
 		LOG_D("DHT read failed");
+		display_show_sensor_error();
 		return;
 	}
 
@@ -167,6 +171,7 @@ void report_environment()
 		LOG_D("Humidity: %.1f %%", humidity);
 	}
 
+	display_update(temperature, humidity, humidity_baseline, switch_state, manual_override_active(t));
 	update_switch_from_humidity(humidity, t);
 }
 
