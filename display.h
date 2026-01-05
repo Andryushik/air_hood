@@ -24,6 +24,11 @@
 
 void display_setup();
 void display_show_sensor_error();
-void display_update(float temperature, float humidity, float baseline, bool fan_on, bool override_active);
+void display_update(float temperature,
+										float humidity,
+										float humidity_baseline,
+										float temperature_baseline,
+										bool fan_on,
+										bool override_active);
 
 #endif /* DISPLAY_H_ */

@@ -74,7 +74,12 @@ void display_show_sensor_error()
     display.display();
 }
 
-void display_update(float temperature, float humidity, float baseline, bool fan_on, bool override_active)
+void display_update(float temperature,
+                    float humidity,
+                    float humidity_baseline,
+                    float temperature_baseline,
+                    bool fan_on,
+                    bool override_active)
 {
     if (!display_ok)
     {
@@ -101,7 +106,8 @@ void display_update(float temperature, float humidity, float baseline, bool fan_
 
     const bool temp_valid = !isnan(temperature);
     const bool hum_valid = !isnan(humidity);
-    const bool base_valid = !isnan(baseline);
+    const bool base_h_valid = !isnan(humidity_baseline);
+    const bool base_t_valid = !isnan(temperature_baseline);
 
     display.setTextSize(1);
     display.setCursor(0, 22);
@@ -133,18 +139,36 @@ void display_update(float temperature, float humidity, float baseline, bool fan_
     }
     display.print(" %");
 
-    display.setCursor(0, 46);
-    display.print("Base Humidity: ");
-    display.setCursor(90, 46);
-    if (base_valid)
+    display.setCursor(0, 52);
+    display.print("Base T:");
+    display.setCursor(44, 52);
+    if (base_t_valid)
     {
-        display.print(round_to_int(baseline));
+        display.print(round_to_int(temperature_baseline));
     }
     else
     {
         display.print("--");
     }
-    display.setTextSize(1);
+    {
+        const int16_t x = display.getCursorX();
+        const int16_t y = display.getCursorY();
+        display.drawCircle(x + 3, y + 1, 1, SSD1306_WHITE);
+        display.setCursor(x + 6, y);
+        display.print("C");
+    }
+
+    display.setCursor(76, 52);
+    display.print("H:");
+    display.setCursor(90, 52);
+    if (base_h_valid)
+    {
+        display.print(round_to_int(humidity_baseline));
+    }
+    else
+    {
+        display.print("--");
+    }
     display.print(" %");
 
     display.display();
