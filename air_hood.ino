@@ -7,13 +7,15 @@
 #define LOG_D(fmt, ...) printf_P(PSTR(fmt "\n"), ##__VA_ARGS__);
 
 #define PIN_SWITCH D6
+#define PIN_BUTTON D5
+#define BUTTON_DEBOUNCE_MS 50
 #define SENSOR_READ_INTERVAL_MS 30000
 #define HEAP_LOG_INTERVAL_MS 60000
 #define AUTO_MIN_ON_MS (5UL * 60UL * 1000UL)
 #define AUTO_MIN_OFF_MS (2UL * 60UL * 1000UL)
 #define MANUAL_OVERRIDE_MS (10UL * 60UL * 1000UL)
-#define HUMIDITY_ABS_ON_MIN 52.0f
-#define HUMIDITY_DELTA_ON 6.0f
+#define HUMIDITY_ABS_ON_MIN 55.0f
+#define HUMIDITY_DELTA_ON 8.0f
 #define HUMIDITY_DELTA_OFF 3.0f
 // Baseline smoothing while fan is OFF (ambient humidity).
 // Use slower rise (ignore short humidity spikes) and slightly faster fall.
@@ -21,17 +23,19 @@
 #define HUMIDITY_BASELINE_ALPHA_DOWN 0.05f
 
 // Temperature-based trigger (useful for stove/hood): turn ON if temperature rises above ambient.
-#define TEMP_ABS_ON_MIN 25.0f
-#define TEMP_DELTA_ON 2.0f
-#define TEMP_DELTA_OFF 1.0f
+#define TEMP_ABS_ON_MIN 27.0f
+#define TEMP_DELTA_ON 3.0f
+#define TEMP_DELTA_OFF 1.5f
 // Optional fast-rise trigger (per sensor sample, ~30s): catches sudden heating quickly.
-#define TEMP_RISE_ON_DELTA 0.7f
+#define TEMP_RISE_ON_DELTA 1.0f
 // Baseline smoothing while fan is OFF (ambient temperature).
 #define TEMP_BASELINE_ALPHA_UP 0.02f
 #define TEMP_BASELINE_ALPHA_DOWN 0.05f
 
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 static bool sht31_ok = false;
+static int button_last_level = HIGH;
+static uint32_t button_last_change_millis = 0;
 
 static void sensor_setup()
 {
@@ -60,6 +64,9 @@ void setup()
 {
 	Serial.begin(115200);
 	display_setup();
+	pinMode(PIN_BUTTON, INPUT_PULLUP);
+	button_last_level = digitalRead(PIN_BUTTON);
+	button_last_change_millis = millis();
 	sensor_setup();
 	wifi_connect(); // in wifi_info.h
 	// homekit_storage_reset(); // to remove the previous HomeKit pairing storage
@@ -125,6 +132,21 @@ void apply_switch_state(bool on, bool notify, const char *reason)
 	display_update(last_temperature, last_humidity, humidity_baseline, temperature_baseline, switch_state, manual_override_active(millis()));
 }
 
+void poll_button(uint32_t now)
+{
+	const int level = digitalRead(PIN_BUTTON);
+	if (level != button_last_level && (int32_t)(now - button_last_change_millis) >= BUTTON_DEBOUNCE_MS)
+	{
+		button_last_change_millis = now;
+		button_last_level = level;
+		if (level == LOW)
+		{
+			manual_override_until_millis = now + MANUAL_OVERRIDE_MS;
+			apply_switch_state(!switch_state, true, "button toggle");
+		}
+	}
+}
+
 void update_switch_from_environment(float humidity, float temperature, uint32_t now)
 {
 	if (isnan(humidity))
@@ -182,7 +204,7 @@ void update_switch_from_environment(float humidity, float temperature, uint32_t 
 				 (temp_valid && (temperature >= temp_on_threshold || temp_rise >= TEMP_RISE_ON_DELTA))))
 		{
 			const char *reason = (humidity >= hum_on_threshold) ? "humidity rise"
-															 : ((temp_rise >= TEMP_RISE_ON_DELTA) ? "temp rise" : "temp high");
+																													: ((temp_rise >= TEMP_RISE_ON_DELTA) ? "temp rise" : "temp high");
 			apply_switch_state(true, true, reason);
 		}
 	}
@@ -267,9 +289,10 @@ void my_homekit_setup()
 
 void my_homekit_loop()
 {
+	const uint32_t t = millis();
+	poll_button(t);
 	arduino_homekit_loop();
 	report_environment();
-	const uint32_t t = millis();
 	if ((int32_t)(t - next_heap_millis) >= 0)
 	{
 		// show heap info periodically
