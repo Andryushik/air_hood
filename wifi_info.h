@@ -17,7 +17,7 @@
 #define WIFI_CONFIG_PORTAL_TIMEOUT 180 // seconds
 #endif
 
-void wifi_connect()
+static inline void wifi_connect()
 {
 	WiFi.persistent(false);
 	WiFi.mode(WIFI_STA);
