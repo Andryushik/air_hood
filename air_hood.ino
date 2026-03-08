@@ -7,7 +7,7 @@
 #define LOG_D(fmt, ...) printf_P(PSTR(fmt "\n"), ##__VA_ARGS__);
 
 #define PIN_SWITCH D6
-#define PIN_BUTTON D5
+#define PIN_TOUCH D5 // TTP223B capacitive touch sensor (active HIGH)
 #define BUTTON_DEBOUNCE_MS 50
 #define SENSOR_READ_INTERVAL_MS 30000
 #define HEAP_LOG_INTERVAL_MS 60000
@@ -34,8 +34,8 @@
 
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 static bool sht31_ok = false;
-static int button_last_level = HIGH;
-static uint32_t button_last_change_millis = 0;
+static int touch_last_level = LOW;
+static uint32_t touch_last_change_millis = 0;
 
 static void sensor_setup()
 {
@@ -64,9 +64,9 @@ void setup()
 {
 	Serial.begin(115200);
 	display_setup();
-	pinMode(PIN_BUTTON, INPUT_PULLUP);
-	button_last_level = digitalRead(PIN_BUTTON);
-	button_last_change_millis = millis();
+	pinMode(PIN_TOUCH, INPUT);
+	touch_last_level = digitalRead(PIN_TOUCH);
+	touch_last_change_millis = millis();
 	sensor_setup();
 	wifi_connect(); // in wifi_info.h
 	// homekit_storage_reset(); // to remove the previous HomeKit pairing storage
@@ -132,17 +132,18 @@ void apply_switch_state(bool on, bool notify, const char *reason)
 	display_update(last_temperature, last_humidity, humidity_baseline, temperature_baseline, switch_state, manual_override_active(millis()));
 }
 
-void poll_button(uint32_t now)
+// TTP223B capacitive touch sensor — output goes HIGH on touch.
+void poll_touch(uint32_t now)
 {
-	const int level = digitalRead(PIN_BUTTON);
-	if (level != button_last_level && (int32_t)(now - button_last_change_millis) >= BUTTON_DEBOUNCE_MS)
+	const int level = digitalRead(PIN_TOUCH);
+	if (level != touch_last_level && (int32_t)(now - touch_last_change_millis) >= BUTTON_DEBOUNCE_MS)
 	{
-		button_last_change_millis = now;
-		button_last_level = level;
-		if (level == LOW)
+		touch_last_change_millis = now;
+		touch_last_level = level;
+		if (level == HIGH) // active-HIGH: finger detected
 		{
 			manual_override_until_millis = now + MANUAL_OVERRIDE_MS;
-			apply_switch_state(!switch_state, true, "button toggle");
+			apply_switch_state(!switch_state, true, "touch toggle");
 		}
 	}
 }
@@ -290,7 +291,7 @@ void my_homekit_setup()
 void my_homekit_loop()
 {
 	const uint32_t t = millis();
-	poll_button(t);
+	poll_touch(t);
 	arduino_homekit_loop();
 	report_environment();
 	if ((int32_t)(t - next_heap_millis) >= 0)
