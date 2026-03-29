@@ -55,6 +55,11 @@ struct BaselineData
 
 static const uint32_t BASELINE_MAGIC = 0xA1B2C3D4;
 
+static bool baseline_values_valid(float hum_base, float temp_base)
+{
+	return !isnan(hum_base) && !isnan(temp_base) && hum_base >= 0.0f && hum_base <= 100.0f && temp_base >= 0.0f && temp_base <= 60.0f;
+}
+
 static void baselines_load(float &hum_base, float &temp_base)
 {
 	File f = LittleFS.open(BASELINES_PATH, "r");
@@ -78,9 +83,9 @@ static void baselines_load(float &hum_base, float &temp_base)
 		LOG_D("Baselines too old (%lu ms), discarding", (unsigned long)age);
 		return;
 	}
-	if (isnan(data.humidity_baseline) || isnan(data.temperature_baseline))
+	if (!baseline_values_valid(data.humidity_baseline, data.temperature_baseline))
 	{
-		LOG_D("Baselines contain NAN, discarding");
+		LOG_D("Baselines contain invalid values, discarding");
 		return;
 	}
 	hum_base = data.humidity_baseline;
@@ -91,7 +96,7 @@ static void baselines_load(float &hum_base, float &temp_base)
 
 static void baselines_save(float hum_base, float temp_base)
 {
-	if (isnan(hum_base) || isnan(temp_base))
+	if (!baseline_values_valid(hum_base, temp_base))
 	{
 		return;
 	}
@@ -107,7 +112,12 @@ static void baselines_save(float hum_base, float temp_base)
 		LOG_D("Failed to open baselines file for writing");
 		return;
 	}
-	f.write((uint8_t *)&data, sizeof(data));
+	if (f.write((uint8_t *)&data, sizeof(data)) != sizeof(data))
+	{
+		LOG_D("Failed to write complete baselines file");
+		f.close();
+		return;
+	}
 	f.close();
 	LOG_D("Baselines saved: H=%.1f%% T=%.1fC", hum_base, temp_base);
 }
@@ -158,7 +168,10 @@ void setup()
 {
 	Serial.begin(115200);
 	display_setup();
-	LittleFS.begin();
+	if (!LittleFS.begin())
+	{
+		LOG_D("LittleFS init failed");
+	}
 	pinMode(PIN_TOUCH, INPUT);
 	touch_last_level = digitalRead(PIN_TOUCH);
 	touch_last_change_millis = millis();
@@ -450,6 +463,7 @@ void my_homekit_setup()
 	const uint32_t now = millis();
 	last_fan_change_millis = now;
 	last_fan_off_millis = now;
+	next_sensor_millis = now;
 	next_baseline_save_millis = now + BASELINE_SAVE_INTERVAL_MS;
 }
 

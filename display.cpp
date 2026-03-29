@@ -48,9 +48,7 @@ static void draw_wifi_icon(int16_t x, int16_t y, int16_t rssi)
     if (rssi == 0)
     {
         // Disconnected: draw WiFi shape with a cross-out line, blinks every other refresh
-        static bool blink = false;
-        blink = !blink;
-        if (blink)
+        if (((millis() / 500UL) % 2UL) != 0)
         {
             return; // hidden phase of blink
         }

@@ -14,7 +14,7 @@ Integrates with **Apple HomeKit** natively (no hub, no cloud), reads air quality
 - **Safety timeout** — fan is forced OFF after 3 hours of continuous operation to protect against stuck sensor readings
 - **Sensor failure fallback** — if the sensor fails for more than 5 minutes, the fan (if ON) is given a 30-minute grace period then turned OFF; if OFF, it stays OFF
 - **I2C bus recovery** — automatic clock-pulse recovery if the I2C bus hangs (e.g. from relay switching noise)
-- **Baseline persistence** — ambient baselines are saved to flash (LittleFS) every 15 minutes and restored on boot (up to 4 hours old), preventing corrupted baselines after a reboot during cooking
+- **Baseline persistence** — ambient baselines are saved to flash (LittleFS) every 15 minutes and restored on boot if they are recent and still look sane
 - **OLED status display** — live temperature, humidity, baselines, fan state, and manual override indicator with burn-in mitigation (auto-dim after 60s, display off after 5 min when fan is OFF, pixel shifting)
 - **WiFiManager** — first-boot captive-portal setup; no hardcoded credentials
 - **OTA-free simplicity** — short flash cycle over USB
@@ -66,7 +66,7 @@ Integrates with **Apple HomeKit** natively (no hub, no cloud), reads air quality
 
 ### Full Pin Summary
 
-```
+```text
 NodeMCU D1  →  OLED SCL / SHT31 SCL
 NodeMCU D2  →  OLED SDA / SHT31 SDA
 NodeMCU D5  →  TTP223B I/O
@@ -122,10 +122,10 @@ The firmware adapts to your environment using a **rolling ambient baseline** lea
 
 ### Temperature trigger (stove/cooking detection)
 
-| Event             | Condition                                                                             |
-| ----------------- | ------------------------------------------------------------------------------------- |
-| Fan turns **ON**  | Temperature >= max(27C, baseline + 3C), **or** a sudden +1C rise in one 30s sample    |
-| Fan turns **OFF** | Temperature <= baseline + 1.5C AND fan has been ON for at least 5 min                 |
+| Event             | Condition                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| Fan turns **ON**  | Temperature >= max(27C, baseline + 3C), **or** a sudden +1C rise in one 30s sample |
+| Fan turns **OFF** | Temperature <= baseline + 1.5C AND fan has been ON for at least 5 min              |
 
 ### Baseline learning
 
@@ -133,7 +133,7 @@ The device tracks ambient humidity and temperature using exponential smoothing *
 
 **Two-phase tracking:** For the first 5 minutes after the fan turns OFF, faster smoothing alphas are used to quickly re-acquire the true ambient after a long cooking session. After 5 minutes, the system switches to the normal slow alphas for stability.
 
-**Persistence:** Baselines are saved to flash (LittleFS) every 15 minutes while the fan is OFF. On boot, saved baselines are loaded if they are less than 4 hours old, preventing corrupted baselines when the device reboots during cooking.
+**Persistence:** Baselines are saved to flash (LittleFS) every 15 minutes while the fan is OFF. On boot, saved baselines are loaded if they are less than 4 hours old and still fall into sane sensor ranges, which keeps the implementation simple while avoiding obviously broken restored values.
 
 ### Manual override
 
@@ -158,7 +158,7 @@ Before each sensor retry, an **I2C bus recovery** sequence (9 clock pulses) is p
 
 ## OLED Display Layout
 
-```
+```text
  [FAN]  ON         MAN   ← fan icon + state + override indicator
  Temperature:    22 °C
  Humidity:       48 %
@@ -183,33 +183,33 @@ All display content is shifted by 1-2 pixels each refresh cycle to distribute pi
 
 ## Configuration Constants (air_hood.ino)
 
-| Constant                      | Default   | Description                                           |
-| ----------------------------- | --------- | ----------------------------------------------------- |
-| `SENSOR_READ_INTERVAL_MS`     | 30 000 ms | How often sensor is polled                            |
-| `AUTO_MIN_ON_MS`              | 5 min     | Minimum fan-ON time before auto-off                   |
-| `AUTO_MIN_OFF_MS`             | 2 min     | Minimum fan-OFF time before auto-on                   |
-| `MANUAL_OVERRIDE_MS`          | 30 min    | How long a manual action blocks auto-logic            |
-| `SAFETY_MAX_ON_MS`            | 3 hours   | Maximum continuous fan-ON before forced OFF           |
-| `BASELINE_SAVE_INTERVAL_MS`   | 15 min    | How often baselines are saved to flash                |
-| `BASELINE_MAX_AGE_MS`         | 4 hours   | Maximum age of saved baselines to restore on boot     |
-| `SENSOR_FAIL_TIMEOUT_MS`      | 5 min     | Time before sensor failure fallback activates         |
-| `SENSOR_FAIL_FAN_ON_GRACE_MS` | 30 min    | Grace period before turning fan OFF on sensor failure |
-| `BASELINE_FAST_PHASE_MS`      | 5 min     | Duration of fast baseline tracking after fan turns OFF|
-| `HUMIDITY_ABS_ON_MIN`         | 55.0%     | Absolute humidity floor to trigger fan                |
-| `HUMIDITY_DELTA_ON`           | 8.0%      | Rise above baseline to trigger fan ON                 |
-| `HUMIDITY_DELTA_OFF`          | 3.0%      | Rise above baseline below which fan turns OFF         |
-| `TEMP_ABS_ON_MIN`             | 27.0C     | Absolute temperature floor to trigger fan             |
-| `TEMP_DELTA_ON`               | 3.0C      | Rise above baseline to trigger fan ON                 |
-| `TEMP_DELTA_OFF`              | 1.5C      | Rise above baseline below which fan turns OFF         |
-| `TEMP_RISE_ON_DELTA`          | 1.0C      | Sudden per-sample rise to trigger fan ON immediately  |
-| `DISPLAY_DIM_MS`              | 60 s      | Inactivity before display dims (fan OFF only)         |
-| `DISPLAY_OFF_MS`              | 5 min     | Inactivity before display turns off (fan OFF only)    |
+| Constant                      | Default   | Description                                            |
+| ----------------------------- | --------- | ------------------------------------------------------ |
+| `SENSOR_READ_INTERVAL_MS`     | 30 000 ms | How often sensor is polled                             |
+| `AUTO_MIN_ON_MS`              | 5 min     | Minimum fan-ON time before auto-off                    |
+| `AUTO_MIN_OFF_MS`             | 2 min     | Minimum fan-OFF time before auto-on                    |
+| `MANUAL_OVERRIDE_MS`          | 30 min    | How long a manual action blocks auto-logic             |
+| `SAFETY_MAX_ON_MS`            | 3 hours   | Maximum continuous fan-ON before forced OFF            |
+| `BASELINE_SAVE_INTERVAL_MS`   | 15 min    | How often baselines are saved to flash                 |
+| `BASELINE_MAX_AGE_MS`         | 4 hours   | Maximum age of saved baselines to restore on boot      |
+| `SENSOR_FAIL_TIMEOUT_MS`      | 5 min     | Time before sensor failure fallback activates          |
+| `SENSOR_FAIL_FAN_ON_GRACE_MS` | 30 min    | Grace period before turning fan OFF on sensor failure  |
+| `BASELINE_FAST_PHASE_MS`      | 5 min     | Duration of fast baseline tracking after fan turns OFF |
+| `HUMIDITY_ABS_ON_MIN`         | 55.0%     | Absolute humidity floor to trigger fan                 |
+| `HUMIDITY_DELTA_ON`           | 8.0%      | Rise above baseline to trigger fan ON                  |
+| `HUMIDITY_DELTA_OFF`          | 3.0%      | Rise above baseline below which fan turns OFF          |
+| `TEMP_ABS_ON_MIN`             | 27.0C     | Absolute temperature floor to trigger fan              |
+| `TEMP_DELTA_ON`               | 3.0C      | Rise above baseline to trigger fan ON                  |
+| `TEMP_DELTA_OFF`              | 1.5C      | Rise above baseline below which fan turns OFF          |
+| `TEMP_RISE_ON_DELTA`          | 1.0C      | Sudden per-sample rise to trigger fan ON immediately   |
+| `DISPLAY_DIM_MS`              | 60 s      | Inactivity before display dims (fan OFF only)          |
+| `DISPLAY_OFF_MS`              | 5 min     | Inactivity before display turns off (fan OFF only)     |
 
 ---
 
 ## Project Structure
 
-```
+```text
 air_hood/
 ├── air_hood.ino      — Main sketch: setup, loop, sensor logic, HomeKit glue
 ├── display.cpp/.h    — OLED rendering (Adafruit SSD1306) with burn-in mitigation
