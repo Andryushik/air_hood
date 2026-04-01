@@ -9,7 +9,6 @@ static bool display_ok = false;
 static bool display_on = true;
 static bool display_dimmed = false;
 static uint32_t display_last_activity = 0;
-static uint8_t pixel_shift_index = 0;
 
 static int16_t round_to_int(float value)
 {
@@ -129,33 +128,28 @@ void display_update(float temperature,
         return;
     }
 
-    // Pixel shifting: cycle through 3x3 offsets to reduce burn-in
-    const int16_t ox = (int16_t)(pixel_shift_index % 3);
-    const int16_t oy = (int16_t)(pixel_shift_index / 3);
-    pixel_shift_index = (pixel_shift_index + 1) % 9;
-
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
-    draw_fan_icon(0 + ox, 0 + oy);
+    draw_fan_icon(0, 0);
     if (fan_on)
     {
-        draw_wind_trails(18 + ox, 4 + oy);
+        draw_wind_trails(18, 4);
     }
 
     display.setTextSize(2);
-    display.setCursor(40 + ox, 1 + oy);
+    display.setCursor(40, 1);
     display.print(fan_on ? " ON" : "OFF");
 
     // Top-right corner: MAN override or WiFi status
     if (override_active)
     {
         display.setTextSize(1);
-        display.setCursor(96 + ox, 1 + oy);
+        display.setCursor(96, 1);
         display.print("MAN");
     }
     else
     {
-        draw_wifi_icon(116 + ox, 1 + oy, wifi_rssi);
+        draw_wifi_icon(116, 1, wifi_rssi);
     }
 
     const bool temp_valid = !isnan(temperature);
@@ -164,9 +158,9 @@ void display_update(float temperature,
     const bool base_t_valid = !isnan(temperature_baseline);
 
     display.setTextSize(1);
-    display.setCursor(0 + ox, 22 + oy);
+    display.setCursor(0, 22);
     display.print("Temperature: ");
-    display.setCursor(90 + ox, 22 + oy);
+    display.setCursor(90, 22);
     if (temp_valid)
     {
         display.print(round_to_int(temperature));
@@ -175,13 +169,13 @@ void display_update(float temperature,
     {
         display.print("--");
     }
-    display.drawCircle(105 + ox, 23 + oy, 1, SSD1306_WHITE);
-    display.setCursor(108 + ox, 22 + oy);
+    display.drawCircle(105, 23, 1, SSD1306_WHITE);
+    display.setCursor(108, 22);
     display.print("C");
 
-    display.setCursor(0 + ox, 34 + oy);
+    display.setCursor(0, 34);
     display.print("Humidity: ");
-    display.setCursor(90 + ox, 34 + oy);
+    display.setCursor(90, 34);
     if (hum_valid)
     {
         display.print(round_to_int(humidity));
@@ -192,9 +186,9 @@ void display_update(float temperature,
     }
     display.print(" %");
 
-    display.setCursor(0 + ox, 52 + oy);
+    display.setCursor(0, 52);
     display.print("Base T:");
-    display.setCursor(44 + ox, 52 + oy);
+    display.setCursor(44, 52);
     if (base_t_valid)
     {
         display.print(round_to_int(temperature_baseline));
@@ -211,9 +205,9 @@ void display_update(float temperature,
         display.print("C");
     }
 
-    display.setCursor(76 + ox, 52 + oy);
+    display.setCursor(76, 52);
     display.print("H:");
-    display.setCursor(90 + ox, 52 + oy);
+    display.setCursor(90, 52);
     if (base_h_valid)
     {
         display.print(round_to_int(humidity_baseline));
@@ -259,16 +253,20 @@ void display_check_timeout(uint32_t now, bool fan_on)
         return;
     }
 
-    const uint32_t idle = now - display_last_activity;
+    const int32_t idle = (int32_t)(now - display_last_activity);
+    if (idle < 0)
+    {
+        return;
+    }
 
-    if (display_on && !display_dimmed && idle >= DISPLAY_DIM_MS)
+    if (display_on && !display_dimmed && idle >= (int32_t)DISPLAY_DIM_MS)
     {
         display.ssd1306_command(SSD1306_SETCONTRAST);
         display.ssd1306_command(DISPLAY_DIM_CONTRAST);
         display_dimmed = true;
     }
 
-    if (display_on && idle >= DISPLAY_OFF_MS)
+    if (display_on && idle >= (int32_t)DISPLAY_OFF_MS)
     {
         display.ssd1306_command(SSD1306_DISPLAYOFF);
         display_on = false;
