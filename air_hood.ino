@@ -26,7 +26,7 @@
 // Temperature-based trigger (useful for stove/hood): turn ON if temperature rises above ambient.
 #define TEMP_ABS_ON_MIN 27.0f
 #define TEMP_DELTA_ON 3.0f
-#define TEMP_DELTA_OFF 1.5f
+#define TEMP_DELTA_OFF 2.0f
 // Optional fast-rise trigger (per sensor sample, ~30s): catches sudden heating quickly.
 #define TEMP_RISE_ON_DELTA 1.0f
 // Baseline smoothing while fan is OFF (ambient temperature).

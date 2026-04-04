@@ -89,7 +89,7 @@ void display_setup()
         display.setTextSize(1);
         display.setTextColor(SSD1306_WHITE);
         display.setCursor(0, 0);
-        display.println("Air Hood");
+        display.println("Range Hood");
         display.println("Starting...");
         display.display();
     }
