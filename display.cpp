@@ -54,38 +54,31 @@ static void draw_wind_trails(int16_t x, int16_t y)
     }
 }
 
-// WiFi signal icon: 3 arcs + dot, or crossed-out WiFi (blinking) when disconnected.
+// WiFi signal icon: 3 arcs + dot, or a crossed-out WiFi shape when disconnected.
 static void draw_wifi_icon(int16_t x, int16_t y, int16_t rssi)
 {
     if (rssi == 0)
     {
         // Disconnected: static WiFi shape with a cross-out line.
-        // (display_update refreshes only ~every 30s, so the old millis()-based
-        //  blink never actually toggled — draw it steadily instead.)
-        // Draw the WiFi arcs (greyed out / static shape)
         display.fillRect(x + 4, y + 8, 2, 2, SSD1306_WHITE);
         display.drawCircleHelper(x + 5, y + 9, 4, 0x1, SSD1306_WHITE);
         display.drawCircleHelper(x + 5, y + 9, 7, 0x1, SSD1306_WHITE);
-        // Diagonal cross-out line
-        display.drawLine(x, y + 9, x + 10, y, SSD1306_WHITE);
+        display.drawLine(x, y + 9, x + 10, y, SSD1306_WHITE); // cross-out
         return;
     }
     // Base dot (always shown when connected)
     display.fillRect(x + 4, y + 8, 2, 2, SSD1306_WHITE);
-    // 1 bar: RSSI > -80
     if (rssi > -80)
     {
-        display.drawCircleHelper(x + 5, y + 9, 4, 0x1, SSD1306_WHITE);
+        display.drawCircleHelper(x + 5, y + 9, 4, 0x1, SSD1306_WHITE); // 1 bar
     }
-    // 2 bars: RSSI > -65
     if (rssi > -65)
     {
-        display.drawCircleHelper(x + 5, y + 9, 7, 0x1, SSD1306_WHITE);
+        display.drawCircleHelper(x + 5, y + 9, 7, 0x1, SSD1306_WHITE); // 2 bars
     }
-    // 3 bars: RSSI > -50
     if (rssi > -50)
     {
-        display.drawCircleHelper(x + 5, y + 9, 10, 0x1, SSD1306_WHITE);
+        display.drawCircleHelper(x + 5, y + 9, 10, 0x1, SSD1306_WHITE); // 3 bars
     }
 }
 
@@ -195,7 +188,7 @@ void display_update(float temperature,
     if (override_active)
     {
         display.setTextSize(1);
-        display.setCursor(90, 1);
+        display.setCursor(84, 1); // centred between "ON/OFF" (right ~x74) and WiFi (left ~x111)
         display.print("MAN");
     }
 
