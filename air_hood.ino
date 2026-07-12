@@ -8,13 +8,13 @@
 #include "RemoteLog.h"
 
 // LOG_D goes to Serial AND the telnet console (port 23) via RemoteLog.
-#define LOG_D(fmt, ...) debugOut.printf(fmt "\n", ##__VA_ARGS__);
+#define LOG_D(fmt, ...) debugOut.printf_P(PSTR(fmt "\n"), ##__VA_ARGS__);
 
 #define OTA_HOSTNAME "AirHood"
 #define OTA_PASSWORD "28142814"
 
 // Bump this on each OTA push so the telnet banner unambiguously shows which build is live.
-const char *FW_VERSION = "2026-07-12.3";
+const char *FW_VERSION = "2026-07-12.4";
 
 #define PIN_SWITCH D6
 #define PIN_TOUCH D5 // TTP223B capacitive touch sensor (active HIGH)
@@ -23,6 +23,11 @@ const char *FW_VERSION = "2026-07-12.3";
 #define HEAP_LOG_INTERVAL_MS 60000
 #define AUTO_MIN_ON_MS (5UL * 60UL * 1000UL)
 #define AUTO_MIN_OFF_MS (2UL * 60UL * 1000UL)
+// After the air returns to normal, keep running until it has stayed calm for
+// this long CONTINUOUSLY. Continued cooking (steam/heat pulses) re-arms the
+// countdown, so the fan won't switch off mid-cook just because it extracted
+// the current burst. Any spike above the OFF thresholds resets the timer.
+#define AUTO_OFF_OVERRUN_MS (10UL * 60UL * 1000UL)
 #define MANUAL_OVERRIDE_MS (30UL * 60UL * 1000UL)
 #define HUMIDITY_ABS_ON_MIN 55.0f
 #define HUMIDITY_DELTA_ON 8.0f
@@ -235,6 +240,7 @@ static uint32_t manual_override_until_millis = 0;
 static uint32_t sensor_fail_since_millis = 0;
 static uint32_t last_touch_millis = 0;
 static float last_temperature_for_rise = NAN; // per-sample temp-rise trigger reference
+static uint32_t env_calm_since_millis = 0;     // when air first went calm while fan ON (0 = not calm)
 
 static bool manual_override_active(uint32_t now)
 {
@@ -260,6 +266,7 @@ void apply_switch_state(bool on, bool notify, const char *reason)
 		{
 			last_fan_off_millis = now;
 		}
+		env_calm_since_millis = 0; // reset the auto-off overrun countdown on any state change
 	}
 	if (notify && changed)
 	{
@@ -393,9 +400,23 @@ void update_switch_from_environment(float humidity, float temperature, uint32_t 
 	{
 		const bool humidity_ok = humidity <= hum_off_threshold;
 		const bool temperature_ok = !temp_valid || temperature <= temp_off_threshold;
-		if (since_change >= AUTO_MIN_ON_MS && humidity_ok && temperature_ok)
+		const bool env_calm = humidity_ok && temperature_ok;
+		if (!env_calm)
 		{
-			apply_switch_state(false, true, "environment normal");
+			env_calm_since_millis = 0; // still cooking (steam/heat) — cancel the shutoff countdown
+		}
+		else
+		{
+			if (env_calm_since_millis == 0)
+			{
+				env_calm_since_millis = now; // air just went calm — start the overrun countdown
+			}
+			// Off only after min-on AND the air has stayed calm continuously for the overrun.
+			if (since_change >= AUTO_MIN_ON_MS &&
+					(now - env_calm_since_millis) >= AUTO_OFF_OVERRUN_MS)
+			{
+				apply_switch_state(false, true, "environment normal (overrun elapsed)");
+			}
 		}
 	}
 }

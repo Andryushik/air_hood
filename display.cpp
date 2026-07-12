@@ -13,6 +13,7 @@ static uint32_t display_last_activity = 0;
 // Skip the ~25ms full-frame I2C push when nothing visible changed (cuts the
 // periodic HomeKit latency blip). Reset by display_wake() so waking repaints.
 static bool s_force_redraw = true;
+static bool s_sensor_error_shown = false; // one-shot: wake panel only on ENTERING the sensor-error state
 struct RenderState
 {
     bool valid;
@@ -110,7 +111,13 @@ void display_show_sensor_error()
     {
         return;
     }
-    display_wake(); // ensure the panel is on so the error is actually visible
+    // Wake the panel only when first entering the error state — NOT on every 30s
+    // retry, or the idle timer never fires and the static screen burns in.
+    if (!s_sensor_error_shown)
+    {
+        display_wake();
+        s_sensor_error_shown = true;
+    }
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(2);
@@ -129,6 +136,8 @@ void display_update(float temperature,
                     bool override_active,
                     int16_t wifi_rssi)
 {
+    s_sensor_error_shown = false; // a good read/wake -> re-arm the one-shot error wake
+
     if (!display_ok || !display_on)
     {
         return;
