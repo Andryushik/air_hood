@@ -3,6 +3,7 @@
 #include <Adafruit_SHT31.h>
 #include <LittleFS.h>
 #include <ArduinoOTA.h>
+#include <ESP8266WebServer.h>
 #include "wifi_info.h"
 #include "display.h"
 #include "RemoteLog.h"
@@ -14,7 +15,10 @@
 #define OTA_PASSWORD "28142814"
 
 // Bump this on each OTA push so the telnet banner unambiguously shows which build is live.
-const char *FW_VERSION = "2026-07-12.4";
+const char *FW_VERSION = "2026-07-12.5";
+
+static ESP8266WebServer httpd(8080); // HTTP API for Home Assistant (parallel to HomeKit)
+static void web_setup();             // defined after the HomeKit helpers it uses
 
 #define PIN_SWITCH D6
 #define PIN_TOUCH D5 // TTP223B capacitive touch sensor (active HIGH)
@@ -207,6 +211,7 @@ void setup()
 	my_homekit_setup();
 	ota_setup();  // enable wireless firmware updates
 	rlog.begin(); // telnet debug console on port 23 (see log-airhood.sh)
+	web_setup();  // HTTP API on :8080 for Home Assistant
 }
 
 void loop()
@@ -506,6 +511,50 @@ void cha_switch_on_setter(const homekit_value_t value)
 	apply_switch_state(on, false, "HomeKit request");
 }
 
+// ---- HTTP API (Home Assistant) — parallel to HomeKit, no mDNS ----
+// Mirrors cha_switch_on_setter, but notify=true so the Home app also updates.
+static void http_set_fan(bool on)
+{
+	if (on != switch_state)
+	{
+		manual_override_until_millis = millis() + MANUAL_OVERRIDE_MS;
+	}
+	apply_switch_state(on, true, "HTTP request");
+}
+
+static void web_setup()
+{
+	httpd.on("/status", HTTP_GET, []() {
+		char tbuf[16], hbuf[16];
+		if (isnan(last_temperature))
+			strcpy(tbuf, "null");
+		else
+			snprintf(tbuf, sizeof(tbuf), "%.1f", last_temperature);
+		if (isnan(last_humidity))
+			strcpy(hbuf, "null");
+		else
+			snprintf(hbuf, sizeof(hbuf), "%.1f", last_humidity);
+		char buf[128];
+		snprintf(buf, sizeof(buf),
+						 "{\"on\":%s,\"temp\":%s,\"hum\":%s,\"manual\":%s,\"rssi\":%d}",
+						 switch_state ? "true" : "false", tbuf, hbuf,
+						 manual_override_active(millis()) ? "true" : "false",
+						 (int)get_wifi_rssi());
+		httpd.send(200, "application/json", buf);
+	});
+	httpd.on("/on", HTTP_POST, []() {
+		http_set_fan(true);
+		httpd.send(200, "text/plain", "OK");
+	});
+	httpd.on("/off", HTTP_POST, []() {
+		http_set_fan(false);
+		httpd.send(200, "text/plain", "OK");
+	});
+	httpd.onNotFound([]() { httpd.send(404, "text/plain", "Not found"); });
+	httpd.begin();
+	LOG_D("HTTP API on :8080 (/status, POST /on, /off)");
+}
+
 void my_homekit_setup()
 {
 	pinMode(PIN_SWITCH, OUTPUT);
@@ -526,7 +575,8 @@ void my_homekit_setup()
 void my_homekit_loop()
 {
 	const uint32_t t = millis();
-	rlog.loop(); // accept/drain telnet console clients
+	httpd.handleClient(); // HTTP API for Home Assistant (non-blocking)
+	rlog.loop();          // accept/drain telnet console clients
 	poll_touch(t);
 	arduino_homekit_loop();
 	report_environment();
