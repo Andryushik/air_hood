@@ -29,6 +29,13 @@ void RemoteLog::loop()
 									 __DATE__, __TIME__);
 	}
 
+	// Reap a client that has closed so write() stops targeting a dead socket.
+	if (_clientActive && !_client.connected())
+	{
+		_client.stop();
+		_clientActive = false;
+	}
+
 	// Drain and discard any input from the client (keeps the RX buffer clear).
 	if (_clientActive && _client.available())
 	{
@@ -42,12 +49,14 @@ bool RemoteLog::hasClient()
 	return _clientActive && _client.connected();
 }
 
-// Never gate the write on connected()/availableForWrite(): just attempt it and
-// let write() return 0 on a bad socket. Disconnects are handled in loop().
+// Non-blocking: only push to the telnet client when the TCP send buffer has room
+// (availableForWrite() == tcp_sndbuf, which is 0 on a full or closed socket). A
+// stalled/half-open peer therefore DROPS bytes instead of blocking the HomeKit
+// loop for up to WiFiClient's 5s write timeout. Serial always gets the bytes.
 size_t RemoteLog::write(uint8_t c)
 {
 	Serial.write(c);
-	if (_clientActive)
+	if (_clientActive && _client.availableForWrite() >= 1)
 		_client.write(c);
 	return 1;
 }
@@ -55,7 +64,7 @@ size_t RemoteLog::write(uint8_t c)
 size_t RemoteLog::write(const uint8_t *buffer, size_t size)
 {
 	Serial.write(buffer, size);
-	if (_clientActive)
+	if (_clientActive && _client.availableForWrite() >= (int)size)
 		_client.write(buffer, size);
 	return size;
 }

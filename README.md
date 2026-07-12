@@ -133,6 +133,8 @@ The device tracks ambient humidity and temperature using exponential smoothing *
 
 **Two-phase tracking:** For the first 5 minutes after the fan turns OFF, faster smoothing alphas are used to quickly re-acquire the true ambient after a long cooking session. After 5 minutes, the system switches to the normal slow alphas for stability.
 
+**Overrun (post-run) delay:** The fan does not switch off the instant conditions return to normal. Because the fan itself extracts the steam/heat, the sensor can briefly read "normal" while you are still cooking. So auto-off requires the air to stay below the OFF thresholds **continuously** for `AUTO_OFF_OVERRUN_MS` (default 10 min); any spike back above the thresholds re-arms the timer. Continued cooking therefore keeps the fan running, and it only shuts off once cooking has genuinely stopped.
+
 **Persistence:** Baselines are saved to flash (LittleFS) every 15 minutes while the fan is OFF. On boot, saved baselines are loaded if they are less than 4 hours old and still fall into sane sensor ranges, which keeps the implementation simple while avoiding obviously broken restored values.
 
 ### Manual override
@@ -188,6 +190,7 @@ Burn-in is mitigated by the auto-dim and auto-off timers above (there is no pixe
 | `SENSOR_READ_INTERVAL_MS`     | 30 000 ms | How often sensor is polled                             |
 | `AUTO_MIN_ON_MS`              | 5 min     | Minimum fan-ON time before auto-off                    |
 | `AUTO_MIN_OFF_MS`             | 2 min     | Minimum fan-OFF time before auto-on                    |
+| `AUTO_OFF_OVERRUN_MS`         | 10 min    | Air must stay calm this long CONTINUOUSLY before auto-off |
 | `MANUAL_OVERRIDE_MS`          | 30 min    | How long a manual action blocks auto-logic             |
 | `SAFETY_MAX_ON_MS`            | 3 hours   | Maximum continuous fan-ON before forced OFF            |
 | `BASELINE_SAVE_INTERVAL_MS`   | 15 min    | How often baselines are saved to flash                 |
