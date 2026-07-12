@@ -153,9 +153,7 @@ void display_update(float temperature,
     cur.h = cur.h_valid ? round_to_int(humidity) : 0;
     cur.bt = cur.bt_valid ? round_to_int(temperature_baseline) : 0;
     cur.bh = cur.bh_valid ? round_to_int(humidity_baseline) : 0;
-    if (override_active)
-        cur.wifi_bars = 99; // WiFi icon hidden while MAN shown; ignore rssi changes
-    else if (wifi_rssi == 0)
+    if (wifi_rssi == 0)
         cur.wifi_bars = -1;
     else if (wifi_rssi > -50)
         cur.wifi_bars = 3;
@@ -191,16 +189,14 @@ void display_update(float temperature,
     display.setCursor(40, 1);
     display.print(fan_on ? " ON" : "OFF");
 
-    // Top-right corner: MAN override or WiFi status
+    // Top-right corner: WiFi status is always shown; the MAN indicator is added
+    // (to its left) during manual override so WiFi stays visible in manual mode.
+    draw_wifi_icon(116, 1, wifi_rssi);
     if (override_active)
     {
         display.setTextSize(1);
-        display.setCursor(96, 1);
+        display.setCursor(90, 1);
         display.print("MAN");
-    }
-    else
-    {
-        draw_wifi_icon(116, 1, wifi_rssi);
     }
 
     const bool temp_valid = !isnan(temperature);
@@ -220,9 +216,15 @@ void display_update(float temperature,
     {
         display.print("--");
     }
-    display.drawCircle(105, 23, 1, SSD1306_WHITE);
-    display.setCursor(108, 22);
-    display.print("C");
+    {
+        // Place the degree symbol + "C" right after the value so 3-digit or
+        // negative readings don't overlap them (fixed positions used to clip).
+        const int16_t x = display.getCursorX();
+        const int16_t y = display.getCursorY();
+        display.drawCircle(x + 3, y + 1, 1, SSD1306_WHITE);
+        display.setCursor(x + 6, y);
+        display.print("C");
+    }
 
     display.setCursor(0, 34);
     display.print("Humidity: ");

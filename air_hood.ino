@@ -14,7 +14,7 @@
 #define OTA_PASSWORD "28142814"
 
 // Bump this on each OTA push so the telnet banner unambiguously shows which build is live.
-const char *FW_VERSION = "2026-07-12.1";
+const char *FW_VERSION = "2026-07-12.2";
 
 #define PIN_SWITCH D6
 #define PIN_TOUCH D5 // TTP223B capacitive touch sensor (active HIGH)
