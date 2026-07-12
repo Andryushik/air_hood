@@ -2,10 +2,19 @@
 #include <arduino_homekit_server.h>
 #include <Adafruit_SHT31.h>
 #include <LittleFS.h>
+#include <ArduinoOTA.h>
 #include "wifi_info.h"
 #include "display.h"
+#include "RemoteLog.h"
 
-#define LOG_D(fmt, ...) printf_P(PSTR(fmt "\n"), ##__VA_ARGS__);
+// LOG_D goes to Serial AND the telnet console (port 23) via RemoteLog.
+#define LOG_D(fmt, ...) debugOut.printf(fmt "\n", ##__VA_ARGS__);
+
+#define OTA_HOSTNAME "AirHood"
+#define OTA_PASSWORD "28142814"
+
+// Bump this on each OTA push so the telnet banner unambiguously shows which build is live.
+const char *FW_VERSION = "2026-07-12.1";
 
 #define PIN_SWITCH D6
 #define PIN_TOUCH D5 // TTP223B capacitive touch sensor (active HIGH)
@@ -77,12 +86,9 @@ static void baselines_load(float &hum_base, float &temp_base)
 	}
 	f.close();
 
-	const uint32_t age = millis() - data.saved_millis;
-	if (age > BASELINE_MAX_AGE_MS)
-	{
-		LOG_D("Baselines too old (%lu ms), discarding", (unsigned long)age);
-		return;
-	}
+	// NOTE: millis() resets on reboot, so the old saved-vs-current millis() age
+	// check underflowed and discarded almost every restore. Ambient baselines
+	// stay useful across a reboot, so gate only on value sanity, not age.
 	if (!baseline_values_valid(data.humidity_baseline, data.temperature_baseline))
 	{
 		LOG_D("Baselines contain invalid values, discarding");
@@ -90,8 +96,7 @@ static void baselines_load(float &hum_base, float &temp_base)
 	}
 	hum_base = data.humidity_baseline;
 	temp_base = data.temperature_baseline;
-	LOG_D("Baselines loaded: H=%.1f%% T=%.1fC (age %lu s)",
-				hum_base, temp_base, (unsigned long)(age / 1000));
+	LOG_D("Baselines loaded: H=%.1f%% T=%.1fC", hum_base, temp_base);
 }
 
 static void baselines_save(float hum_base, float temp_base)
@@ -139,6 +144,7 @@ static void i2c_recover()
 		delayMicroseconds(5);
 	}
 	Wire.begin(OLED_SDA, OLED_SCL);
+	Wire.setClockStretchLimit(2000); // cap a wedged-bus stall at ~2ms
 }
 
 static void sensor_setup()
@@ -164,6 +170,21 @@ static void sensor_setup()
 	sht31.heater(false);
 }
 
+// OTA over WiFi (espota). HomeKit owns the single MDNS responder, so start
+// ArduinoOTA with useMDNS=false and upload by IP (see flash-*.sh). espota
+// writes only the sketch region — the HomeKit pairing/FS sectors are untouched.
+static void ota_setup()
+{
+	ArduinoOTA.setHostname(OTA_HOSTNAME);
+	ArduinoOTA.setPassword(OTA_PASSWORD);
+	ArduinoOTA.onStart([]() { LOG_D("OTA: start"); });
+	ArduinoOTA.onEnd([]() { LOG_D("OTA: done, rebooting"); });
+	ArduinoOTA.onError([](ota_error_t e) { LOG_D("OTA: error %u", (unsigned)e); });
+	ArduinoOTA.begin(false);
+	LOG_D("Firmware %s | OTA ready: host=%s ip=%s (upload by IP)", FW_VERSION, OTA_HOSTNAME,
+				WiFi.localIP().toString().c_str());
+}
+
 void setup()
 {
 	Serial.begin(115200);
@@ -179,10 +200,13 @@ void setup()
 	wifi_connect(); // in wifi_info.h
 	// homekit_storage_reset(); // to remove the previous HomeKit pairing storage
 	my_homekit_setup();
+	ota_setup();  // enable wireless firmware updates
+	rlog.begin(); // telnet debug console on port 23 (see log-airhood.sh)
 }
 
 void loop()
 {
+	ArduinoOTA.handle();
 	my_homekit_loop();
 	delay(10);
 }
@@ -210,6 +234,7 @@ static float temperature_baseline = NAN;
 static uint32_t manual_override_until_millis = 0;
 static uint32_t sensor_fail_since_millis = 0;
 static uint32_t last_touch_millis = 0;
+static float last_temperature_for_rise = NAN; // per-sample temp-rise trigger reference
 
 static bool manual_override_active(uint32_t now)
 {
@@ -256,7 +281,7 @@ void apply_switch_state(bool on, bool notify, const char *reason)
 }
 
 // TTP223B capacitive touch sensor — output goes HIGH on touch.
-// Single touch: toggle fan + 10-min override.
+// Single touch: toggle fan + 30-min override.
 // Double touch (within 2s): cancel override, return to auto.
 void poll_touch(uint32_t now)
 {
@@ -300,7 +325,7 @@ void update_switch_from_environment(float humidity, float temperature, uint32_t 
 
 		if (isnan(humidity_baseline) && !isnan(humidity))
 		{
-			humidity_baseline = humidity;
+			humidity_baseline = min(humidity, HUMIDITY_ABS_ON_MIN); // clamp seed so a hot start can't lock out auto-ON
 		}
 		else if (!isnan(humidity))
 		{
@@ -311,7 +336,7 @@ void update_switch_from_environment(float humidity, float temperature, uint32_t 
 
 		if (isnan(temperature_baseline) && !isnan(temperature))
 		{
-			temperature_baseline = temperature;
+			temperature_baseline = min(temperature, TEMP_ABS_ON_MIN); // clamp seed (see humidity)
 		}
 		else if (!isnan(temperature))
 		{
@@ -321,8 +346,8 @@ void update_switch_from_environment(float humidity, float temperature, uint32_t 
 		}
 	}
 
-	// Always keep rise tracker current so it is not stale after manual override.
-	static float last_temperature_for_rise = NAN;
+	// Rise tracker is file-scope now and reset on sensor recovery (report_environment),
+	// so it stays current after manual override but never spans a sensor outage.
 	const bool temp_valid = !isnan(temperature);
 	const float temp_rise = (temp_valid && !isnan(last_temperature_for_rise)) ? (temperature - last_temperature_for_rise) : 0.0f;
 	if (temp_valid)
@@ -402,6 +427,7 @@ void report_environment()
 		if (sht31_ok)
 		{
 			LOG_D("SHT31-D read failed");
+			sht31_ok = false; // force i2c_recover()+sensor_setup() on the next tick
 		}
 		display_show_sensor_error();
 		// Sensor failure fallback
@@ -419,6 +445,10 @@ void report_environment()
 			}
 		}
 		return;
+	}
+	if (sensor_fail_since_millis != 0)
+	{
+		last_temperature_for_rise = NAN; // reset rise ref so recovery can't fake a spike
 	}
 	sensor_fail_since_millis = 0;
 
@@ -446,7 +476,12 @@ void report_environment()
 void cha_switch_on_setter(const homekit_value_t value)
 {
 	bool on = value.bool_value;
-	manual_override_until_millis = millis() + MANUAL_OVERRIDE_MS;
+	// Arm the 30-min override only on a real state change, so redundant/no-op
+	// HomeKit writes (automations, hub re-asserts) don't perpetually pause auto.
+	if (on != switch_state)
+	{
+		manual_override_until_millis = millis() + MANUAL_OVERRIDE_MS;
+	}
 	apply_switch_state(on, false, "HomeKit request");
 }
 
@@ -470,10 +505,22 @@ void my_homekit_setup()
 void my_homekit_loop()
 {
 	const uint32_t t = millis();
+	rlog.loop(); // accept/drain telnet console clients
 	poll_touch(t);
 	arduino_homekit_loop();
 	report_environment();
 	display_check_timeout(t, switch_state);
+
+	// Heartbeat to the telnet console (only when a client is watching) — keeps
+	// log-airhood.sh's `nc -w 15` alive and surfaces live heap/clients/RSSI.
+	static uint32_t next_hb_millis = 0;
+	if (rlog.hasClient() && (int32_t)(t - next_hb_millis) >= 0)
+	{
+		next_hb_millis = t + 5000;
+		LOG_D("[hb] up=%lus heap=%u clients=%d rssi=%d",
+					(unsigned long)(t / 1000), ESP.getFreeHeap(),
+					arduino_homekit_connected_clients_count(), (int)get_wifi_rssi());
+	}
 
 	// Periodically save baselines (only when fan is OFF and baselines are valid)
 	if ((int32_t)(t - next_baseline_save_millis) >= 0)

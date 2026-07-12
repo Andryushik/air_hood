@@ -15,7 +15,7 @@ Integrates with **Apple HomeKit** natively (no hub, no cloud), reads air quality
 - **Sensor failure fallback** — if the sensor fails for more than 5 minutes, the fan (if ON) is given a 30-minute grace period then turned OFF; if OFF, it stays OFF
 - **I2C bus recovery** — automatic clock-pulse recovery if the I2C bus hangs (e.g. from relay switching noise)
 - **Baseline persistence** — ambient baselines are saved to flash (LittleFS) every 15 minutes and restored on boot if they are recent and still look sane
-- **OLED status display** — live temperature, humidity, baselines, fan state, and manual override indicator with burn-in mitigation (auto-dim after 60s, display off after 5 min when fan is OFF, pixel shifting)
+- **OLED status display** — live temperature, humidity, baselines, fan state, and manual override indicator with burn-in mitigation (auto-dim after 60s, display off after 5 min when fan is OFF)
 - **WiFiManager** — first-boot captive-portal setup; no hardcoded credentials
 - **OTA-free simplicity** — short flash cycle over USB
 
@@ -125,7 +125,7 @@ The firmware adapts to your environment using a **rolling ambient baseline** lea
 | Event             | Condition                                                                          |
 | ----------------- | ---------------------------------------------------------------------------------- |
 | Fan turns **ON**  | Temperature >= max(27C, baseline + 3C), **or** a sudden +1C rise in one 30s sample |
-| Fan turns **OFF** | Temperature <= baseline + 1.5C AND fan has been ON for at least 5 min              |
+| Fan turns **OFF** | Temperature <= baseline + 2C AND fan has been ON for at least 5 min                |
 
 ### Baseline learning
 
@@ -177,7 +177,7 @@ When the fan is OFF (idle state):
 
 When the fan is ON, the display stays active so you can monitor conditions while cooking.
 
-All display content is shifted by 1-2 pixels each refresh cycle to distribute pixel wear evenly.
+Burn-in is mitigated by the auto-dim and auto-off timers above (there is no pixel-shifting).
 
 ---
 
@@ -200,7 +200,7 @@ All display content is shifted by 1-2 pixels each refresh cycle to distribute pi
 | `HUMIDITY_DELTA_OFF`          | 3.0%      | Rise above baseline below which fan turns OFF          |
 | `TEMP_ABS_ON_MIN`             | 27.0C     | Absolute temperature floor to trigger fan              |
 | `TEMP_DELTA_ON`               | 3.0C      | Rise above baseline to trigger fan ON                  |
-| `TEMP_DELTA_OFF`              | 1.5C      | Rise above baseline below which fan turns OFF          |
+| `TEMP_DELTA_OFF`              | 2.0C      | Rise above baseline below which fan turns OFF          |
 | `TEMP_RISE_ON_DELTA`          | 1.0C      | Sudden per-sample rise to trigger fan ON immediately   |
 | `DISPLAY_DIM_MS`              | 60 s      | Inactivity before display dims (fan OFF only)          |
 | `DISPLAY_OFF_MS`              | 5 min     | Inactivity before display turns off (fan OFF only)     |

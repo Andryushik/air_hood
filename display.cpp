@@ -10,6 +10,19 @@ static bool display_on = true;
 static bool display_dimmed = false;
 static uint32_t display_last_activity = 0;
 
+// Skip the ~25ms full-frame I2C push when nothing visible changed (cuts the
+// periodic HomeKit latency blip). Reset by display_wake() so waking repaints.
+static bool s_force_redraw = true;
+struct RenderState
+{
+    bool valid;
+    bool fan_on, override_active;
+    bool t_valid, h_valid, bt_valid, bh_valid;
+    int16_t t, h, bt, bh;
+    int8_t wifi_bars; // -1=disconnected, 0..3=bars, 99=hidden (MAN override)
+};
+static RenderState s_last = {false, false, false, false, false, false, false, 0, 0, 0, 0, 0};
+
 static int16_t round_to_int(float value)
 {
     return (int16_t)lroundf(value);
@@ -46,11 +59,9 @@ static void draw_wifi_icon(int16_t x, int16_t y, int16_t rssi)
 {
     if (rssi == 0)
     {
-        // Disconnected: draw WiFi shape with a cross-out line, blinks every other refresh
-        if (((millis() / 500UL) % 2UL) != 0)
-        {
-            return; // hidden phase of blink
-        }
+        // Disconnected: static WiFi shape with a cross-out line.
+        // (display_update refreshes only ~every 30s, so the old millis()-based
+        //  blink never actually toggled — draw it steadily instead.)
         // Draw the WiFi arcs (greyed out / static shape)
         display.fillRect(x + 4, y + 8, 2, 2, SSD1306_WHITE);
         display.drawCircleHelper(x + 5, y + 9, 4, 0x1, SSD1306_WHITE);
@@ -81,6 +92,7 @@ static void draw_wifi_icon(int16_t x, int16_t y, int16_t rssi)
 void display_setup()
 {
     Wire.begin(OLED_SDA, OLED_SCL);
+    Wire.setClockStretchLimit(2000); // cap a wedged-bus stall at ~2ms
     if (display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS))
     {
         display_ok = true;
@@ -105,6 +117,7 @@ void display_show_sensor_error()
     {
         return;
     }
+    display_wake(); // ensure the panel is on so the error is actually visible
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(2);
@@ -127,6 +140,44 @@ void display_update(float temperature,
     {
         return;
     }
+
+    RenderState cur;
+    cur.valid = true;
+    cur.fan_on = fan_on;
+    cur.override_active = override_active;
+    cur.t_valid = !isnan(temperature);
+    cur.h_valid = !isnan(humidity);
+    cur.bt_valid = !isnan(temperature_baseline);
+    cur.bh_valid = !isnan(humidity_baseline);
+    cur.t = cur.t_valid ? round_to_int(temperature) : 0;
+    cur.h = cur.h_valid ? round_to_int(humidity) : 0;
+    cur.bt = cur.bt_valid ? round_to_int(temperature_baseline) : 0;
+    cur.bh = cur.bh_valid ? round_to_int(humidity_baseline) : 0;
+    if (override_active)
+        cur.wifi_bars = 99; // WiFi icon hidden while MAN shown; ignore rssi changes
+    else if (wifi_rssi == 0)
+        cur.wifi_bars = -1;
+    else if (wifi_rssi > -50)
+        cur.wifi_bars = 3;
+    else if (wifi_rssi > -65)
+        cur.wifi_bars = 2;
+    else if (wifi_rssi > -80)
+        cur.wifi_bars = 1;
+    else
+        cur.wifi_bars = 0;
+
+    if (!s_force_redraw && s_last.valid &&
+        cur.fan_on == s_last.fan_on && cur.override_active == s_last.override_active &&
+        cur.t_valid == s_last.t_valid && cur.h_valid == s_last.h_valid &&
+        cur.bt_valid == s_last.bt_valid && cur.bh_valid == s_last.bh_valid &&
+        cur.t == s_last.t && cur.h == s_last.h &&
+        cur.bt == s_last.bt && cur.bh == s_last.bh &&
+        cur.wifi_bars == s_last.wifi_bars)
+    {
+        return; // nothing visible changed — skip the full-frame I2C push
+    }
+    s_last = cur;
+    s_force_redraw = false;
 
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
@@ -227,6 +278,7 @@ void display_wake()
     {
         return;
     }
+    s_force_redraw = true; // panel may have been off/stale — repaint on next update
     display_last_activity = millis();
     if (!display_on)
     {
