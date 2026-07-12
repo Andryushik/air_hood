@@ -21,6 +21,7 @@ static inline void wifi_connect()
 {
 	WiFi.persistent(false);
 	WiFi.mode(WIFI_STA);
+	WiFi.setSleepMode(WIFI_NONE_SLEEP); // keep radio awake — HomeKit needs low latency
 
 	WiFiManager wm;
 	wm.setWiFiAutoReconnect(true);
@@ -35,6 +36,7 @@ static inline void wifi_connect()
 #endif
 	}
 
+	WiFi.setSleepMode(WIFI_NONE_SLEEP); // re-assert; WiFiManager may have toggled it
 	Serial.printf("WiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
 }
 

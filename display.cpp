@@ -10,6 +10,19 @@ static bool display_on = true;
 static bool display_dimmed = false;
 static uint32_t display_last_activity = 0;
 
+// Skip the ~25ms full-frame I2C push when nothing visible changed (cuts the
+// periodic HomeKit latency blip). Reset by display_wake() so waking repaints.
+static bool s_force_redraw = true;
+struct RenderState
+{
+    bool valid;
+    bool fan_on, override_active;
+    bool t_valid, h_valid, bt_valid, bh_valid;
+    int16_t t, h, bt, bh;
+    int8_t wifi_bars; // -1=disconnected, 0..3=bars, 99=hidden (MAN override)
+};
+static RenderState s_last = {false, false, false, false, false, false, false, 0, 0, 0, 0, 0};
+
 static int16_t round_to_int(float value)
 {
     return (int16_t)lroundf(value);
@@ -41,46 +54,38 @@ static void draw_wind_trails(int16_t x, int16_t y)
     }
 }
 
-// WiFi signal icon: 3 arcs + dot, or crossed-out WiFi (blinking) when disconnected.
+// WiFi signal icon: 3 arcs + dot, or a crossed-out WiFi shape when disconnected.
 static void draw_wifi_icon(int16_t x, int16_t y, int16_t rssi)
 {
     if (rssi == 0)
     {
-        // Disconnected: draw WiFi shape with a cross-out line, blinks every other refresh
-        if (((millis() / 500UL) % 2UL) != 0)
-        {
-            return; // hidden phase of blink
-        }
-        // Draw the WiFi arcs (greyed out / static shape)
+        // Disconnected: static WiFi shape with a cross-out line.
         display.fillRect(x + 4, y + 8, 2, 2, SSD1306_WHITE);
         display.drawCircleHelper(x + 5, y + 9, 4, 0x1, SSD1306_WHITE);
         display.drawCircleHelper(x + 5, y + 9, 7, 0x1, SSD1306_WHITE);
-        // Diagonal cross-out line
-        display.drawLine(x, y + 9, x + 10, y, SSD1306_WHITE);
+        display.drawLine(x, y + 9, x + 10, y, SSD1306_WHITE); // cross-out
         return;
     }
     // Base dot (always shown when connected)
     display.fillRect(x + 4, y + 8, 2, 2, SSD1306_WHITE);
-    // 1 bar: RSSI > -80
     if (rssi > -80)
     {
-        display.drawCircleHelper(x + 5, y + 9, 4, 0x1, SSD1306_WHITE);
+        display.drawCircleHelper(x + 5, y + 9, 4, 0x1, SSD1306_WHITE); // 1 bar
     }
-    // 2 bars: RSSI > -65
     if (rssi > -65)
     {
-        display.drawCircleHelper(x + 5, y + 9, 7, 0x1, SSD1306_WHITE);
+        display.drawCircleHelper(x + 5, y + 9, 7, 0x1, SSD1306_WHITE); // 2 bars
     }
-    // 3 bars: RSSI > -50
     if (rssi > -50)
     {
-        display.drawCircleHelper(x + 5, y + 9, 10, 0x1, SSD1306_WHITE);
+        display.drawCircleHelper(x + 5, y + 9, 10, 0x1, SSD1306_WHITE); // 3 bars
     }
 }
 
 void display_setup()
 {
     Wire.begin(OLED_SDA, OLED_SCL);
+    Wire.setClockStretchLimit(2000); // cap a wedged-bus stall at ~2ms
     if (display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS))
     {
         display_ok = true;
@@ -105,6 +110,7 @@ void display_show_sensor_error()
     {
         return;
     }
+    display_wake(); // ensure the panel is on so the error is actually visible
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(2);
@@ -128,6 +134,42 @@ void display_update(float temperature,
         return;
     }
 
+    RenderState cur;
+    cur.valid = true;
+    cur.fan_on = fan_on;
+    cur.override_active = override_active;
+    cur.t_valid = !isnan(temperature);
+    cur.h_valid = !isnan(humidity);
+    cur.bt_valid = !isnan(temperature_baseline);
+    cur.bh_valid = !isnan(humidity_baseline);
+    cur.t = cur.t_valid ? round_to_int(temperature) : 0;
+    cur.h = cur.h_valid ? round_to_int(humidity) : 0;
+    cur.bt = cur.bt_valid ? round_to_int(temperature_baseline) : 0;
+    cur.bh = cur.bh_valid ? round_to_int(humidity_baseline) : 0;
+    if (wifi_rssi == 0)
+        cur.wifi_bars = -1;
+    else if (wifi_rssi > -50)
+        cur.wifi_bars = 3;
+    else if (wifi_rssi > -65)
+        cur.wifi_bars = 2;
+    else if (wifi_rssi > -80)
+        cur.wifi_bars = 1;
+    else
+        cur.wifi_bars = 0;
+
+    if (!s_force_redraw && s_last.valid &&
+        cur.fan_on == s_last.fan_on && cur.override_active == s_last.override_active &&
+        cur.t_valid == s_last.t_valid && cur.h_valid == s_last.h_valid &&
+        cur.bt_valid == s_last.bt_valid && cur.bh_valid == s_last.bh_valid &&
+        cur.t == s_last.t && cur.h == s_last.h &&
+        cur.bt == s_last.bt && cur.bh == s_last.bh &&
+        cur.wifi_bars == s_last.wifi_bars)
+    {
+        return; // nothing visible changed — skip the full-frame I2C push
+    }
+    s_last = cur;
+    s_force_redraw = false;
+
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     draw_fan_icon(0, 0);
@@ -140,16 +182,14 @@ void display_update(float temperature,
     display.setCursor(40, 1);
     display.print(fan_on ? " ON" : "OFF");
 
-    // Top-right corner: MAN override or WiFi status
+    // Top-right corner: WiFi status is always shown; the MAN indicator is added
+    // (to its left) during manual override so WiFi stays visible in manual mode.
+    draw_wifi_icon(116, 1, wifi_rssi);
     if (override_active)
     {
         display.setTextSize(1);
-        display.setCursor(96, 1);
+        display.setCursor(84, 1); // centred between "ON/OFF" (right ~x74) and WiFi (left ~x111)
         display.print("MAN");
-    }
-    else
-    {
-        draw_wifi_icon(116, 1, wifi_rssi);
     }
 
     const bool temp_valid = !isnan(temperature);
@@ -169,9 +209,15 @@ void display_update(float temperature,
     {
         display.print("--");
     }
-    display.drawCircle(105, 23, 1, SSD1306_WHITE);
-    display.setCursor(108, 22);
-    display.print("C");
+    {
+        // Place the degree symbol + "C" right after the value so 3-digit or
+        // negative readings don't overlap them (fixed positions used to clip).
+        const int16_t x = display.getCursorX();
+        const int16_t y = display.getCursorY();
+        display.drawCircle(x + 3, y + 1, 1, SSD1306_WHITE);
+        display.setCursor(x + 6, y);
+        display.print("C");
+    }
 
     display.setCursor(0, 34);
     display.print("Humidity: ");
@@ -227,6 +273,7 @@ void display_wake()
     {
         return;
     }
+    s_force_redraw = true; // panel may have been off/stale — repaint on next update
     display_last_activity = millis();
     if (!display_on)
     {
