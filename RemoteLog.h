@@ -9,7 +9,7 @@
 // discards bytes if the socket is not ready; never stalls the HomeKit loop.
 // Ported from shades_homekit_esp32/RemoteLog (ESP32) to the ESP8266 stack.
 // (ESP32-only TCP-keepalive setsockopt tuning dropped; liveness is handled by
-//  a 5 s app heartbeat + `nc -w 15` in log-airhood.sh.)
+//  a 5 s app heartbeat + `nc -w 15` in log-rangehood.sh.)
 class RemoteLog : public Print
 {
 public:

@@ -1,6 +1,6 @@
-# Air Hood — Smart Kitchen Fan Controller
+# Range Hood — Smart Kitchen Fan Controller
 
-A DIY smart air hood / kitchen fan controller built on an ESP8266 NodeMCU V3.
+A DIY smart range hood / kitchen fan controller built on an ESP8266 NodeMCU V3.
 Integrates with **Apple HomeKit** natively (no hub, no cloud), reads air quality via a **SHT31-D** temperature/humidity sensor, displays live status on an **OLED screen**, controls a **relay**, and supports a **capacitive touch sensor** for hands-free manual control.
 
 ---
@@ -99,10 +99,10 @@ Install via the Arduino Library Manager or Board Manager:
 ## First-Time Setup
 
 1. Flash the firmware via Arduino IDE over USB (CH340 or CP2102 driver required on macOS/Windows).
-2. On first boot the device creates a WiFi access point called **`AirHood-Setup`**.
+2. On first boot the device creates a WiFi access point called **`RangeHood-Setup`**.
 3. Connect to it from your phone and enter your home WiFi credentials through the captive portal (180 seconds timeout).
 4. The device reboots and connects to your WiFi automatically from then on.
-5. Open the **iOS Home app → Add Accessory → More options** and scan for "Air Hood".
+5. Open the **iOS Home app → Add Accessory → More options** and scan for "Range Hood".
    Enter the pairing code: **`281-42-814`**
 
 > To reset HomeKit pairing without reflashing, uncomment `homekit_storage_reset()` in `setup()`, flash once, then comment it out again and reflash.

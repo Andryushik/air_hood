@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # Telnet debug-console capturer with auto-reconnect (mirrors log-shades.sh).
-# Streams the Air Hood's LOG_D output (port 23) to airhood.log next to this file.
+# Streams the Range Hood's LOG_D output (port 23) to rangehood.log next to this file.
 #
 # Usage:
-#   ./log-airhood.sh                  # default: 192.168.2.151
-#   ./log-airhood.sh <host-or-ip>
+#   ./log-rangehood.sh                  # default: 192.168.2.151
+#   ./log-rangehood.sh <host-or-ip>
 #
 # Detached:
-#   nohup ./log-airhood.sh > /dev/null 2>&1 &
+#   nohup ./log-rangehood.sh > /dev/null 2>&1 &
 #   disown
-#   tail -f airhood.log
+#   tail -f rangehood.log
 
 PORT=23
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LOG="$SCRIPT_DIR/airhood.log"
+LOG="$SCRIPT_DIR/rangehood.log"
 HOST="${1:-192.168.2.151}"
-TAG="airhood"
+TAG="rangehood"
 
 while true; do
   printf '[%s][%s] === connecting to %s:%s ===\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$TAG" "$HOST" "$PORT" >> "$LOG"

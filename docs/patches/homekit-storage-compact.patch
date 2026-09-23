@@ -1,0 +1,25 @@
+diff --git a/src/storage.c b/src/storage.c
+index d6f69a7..ca3f8d4 100644
+--- a/src/storage.c
++++ b/src/storage.c
+@@ -228,7 +228,8 @@ static int compact_data() {
+         pairing_data_t *pairing_data = (pairing_data_t *)&data[PAIRINGS_OFFSET + sizeof(pairing_data_t)*i];
+         if (!strncmp(pairing_data->magic, magic1, sizeof(magic1))) {
+             if (i != next_pairing_idx) {
+-                memcpy(&data[PAIRINGS_ADDR + sizeof(pairing_data_t)*next_pairing_idx],
++                // Buffer index, not flash address (was PAIRINGS_ADDR -> out-of-bounds write). Matches upstream esp-homekit.
++                memcpy(&data[PAIRINGS_OFFSET + sizeof(pairing_data_t)*next_pairing_idx],
+                        pairing_data, sizeof(*pairing_data));
+             }
+             next_pairing_idx++;
+@@ -241,7 +242,9 @@ static int compact_data() {
+         return 0;
+     }
+
+-    if (homekit_storage_reset()) {
++    // reset() returns 1 after a successful reformat; only <= 0 is a failure. The old
++    // `if (reset())` bailed out after erasing, losing the accessory ID/key/pairings.
++    if (homekit_storage_reset() <= 0) {
+         ERROR("Failed to compact HomeKit storage: error resetting flash");
+         free(data);
+         return -1;

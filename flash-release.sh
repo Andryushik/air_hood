@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile and OTA-flash the Air Hood (ESP8266) over WiFi — no USB cable needed.
+# Compile and OTA-flash the Range Hood (ESP8266) over WiFi — no USB cable needed.
 # Mirrors the shades_homekit_esp32 workflow (arduino-cli network upload / espota).
 # espota writes ONLY the sketch region — the HomeKit pairing + LittleFS sectors
 # are untouched, so OTA never un-pairs the device.
@@ -10,7 +10,7 @@
 #
 # The device does NOT advertise _arduino._tcp (ArduinoOTA mDNS is off so HomeKit
 # keeps sole ownership of mDNS), so upload by IP. Find the IP from your router
-# or the telnet console banner (./log-airhood.sh).
+# or the telnet console banner (./log-rangehood.sh).
 
 set -e
 

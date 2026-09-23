@@ -27,7 +27,7 @@ static inline void wifi_connect()
 	wm.setWiFiAutoReconnect(true);
 	wm.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
 
-	if (!wm.autoConnect("AirHood-Setup"))
+	if (!wm.autoConnect("RangeHood-Setup"))
 	{
 		Serial.println("WiFi config failed, restarting...");
 		delay(1000);

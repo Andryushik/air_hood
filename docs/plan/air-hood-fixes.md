@@ -1,16 +1,16 @@
-# Air Hood — fixes plan
+# Range Hood — fixes plan
 
 Context: offline was a stale HomeKit pairing (fixed by re-pairing). Remaining = code fixes from the review, delivered wirelessly.
 
 ## Sequencing (decided)
 1. **FLASH #1 — OTA enablement, over USB.** Adds ArduinoOTA + a telnet console + flash/log scripts. No logic changes. **IMPLEMENTED — compiles (flash 53%, static RAM 46%, IRAM 94%). Pending the USB flash.**
    - USB flash MUST use **Erase Flash: "Only Sketch Data"/wipe=none** (the FQBN in the scripts already sets `wipe=none`) so the pairing you just set up is preserved.
-   - Verify after flashing: device reconnects + still paired; `./log-airhood.sh` shows the console banner + heartbeats; run `./flash-release.sh` once as a no-op to confirm the OTA path works *while USB recovery is still possible*.
+   - Verify after flashing: device reconnects + still paired; `./log-rangehood.sh` shows the console banner + heartbeats; run `./flash-release.sh` once as a no-op to confirm the OTA path works *while USB recovery is still possible*.
 2. **Tiers 1-3 below — pushed via `./flash-release.sh` (wireless)** once OTA is confirmed.
 
 OTA feasibility: verified by real build — 557 KB / 1024 KB sketch slot (53%), ~490 KB free for the OTA image. **Feasible.**
 
-Files added for FLASH #1: `RemoteLog.h/.cpp`, `flash-release.sh`, `flash-debug.sh`, `log-airhood.sh`. Edits: `air_hood.ino` (includes, `LOG_D`→telnet, `ota_setup()`, `ArduinoOTA.handle()`, `rlog.loop()`+heartbeat). OTA password `28142814`, hostname `AirHood`, `ArduinoOTA.begin(false)` (HomeKit keeps mDNS; upload by IP).
+Files added for FLASH #1: `RemoteLog.h/.cpp`, `flash-release.sh`, `flash-debug.sh`, `log-rangehood.sh`. Edits: `air_hood.ino` (includes, `LOG_D`→telnet, `ota_setup()`, `ArduinoOTA.handle()`, `rlog.loop()`+heartbeat). OTA password `28142814`, hostname `RangeHood`, `ArduinoOTA.begin(false)` (HomeKit keeps mDNS; upload by IP).
 
 ---
 
@@ -96,7 +96,7 @@ if (sensor_fail_since_millis != 0)
 
 ## Tier 4 — ArduinoOTA (optional; one supervised USB flash to enable, wireless after)
 
-- `#include <ArduinoOTA.h>`; in setup after HomeKit is up: set hostname `AirHood`, a password, `ArduinoOTA.begin();`
+- `#include <ArduinoOTA.h>`; in setup after HomeKit is up: set hostname `RangeHood`, a password, `ArduinoOTA.begin();`
 - In `loop()`: `ArduinoOTA.handle();` (non-blocking).
 - **Risk to verify:** HomeKit already runs the `MDNS` responder; `ArduinoOTA.begin()` re-inits MDNS. Must confirm HomeKit pairing + discovery still work after adding OTA (test on the bench with serial attached before trusting it). Heap cost ~1-2 KB — acceptable given ~440 KB flash headroom, but watch the `Free heap` log after adding.
 

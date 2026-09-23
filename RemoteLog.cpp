@@ -21,7 +21,7 @@ void RemoteLog::loop()
 		_client = incoming;
 		_clientActive = true;
 		_client.setNoDelay(true);
-		_client.printf("=== Air Hood fw=%s  ip=%s  reset=%s  uptime=%lus  (console %s %s) ===\r\n",
+		_client.printf("=== Range Hood fw=%s  ip=%s  reset=%s  uptime=%lus  (console %s %s) ===\r\n",
 									 FW_VERSION,
 									 WiFi.localIP().toString().c_str(),
 									 ESP.getResetReason().c_str(),

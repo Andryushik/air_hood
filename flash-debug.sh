@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Same as flash-release.sh but compiles with -DAIRHOOD_DEBUG for extra-verbose
+# Same as flash-release.sh but compiles with -DRANGEHOOD_DEBUG for extra-verbose
 # logging (reserved for future gated diagnostics). The telnet console on port 23
 # is always available in both builds. OTA over WiFi — no USB cable needed.
 #
@@ -16,9 +16,9 @@ BUILD_DIR="./build/debug"
 
 cd "$(dirname "$0")"
 
-echo "==> compile (debug -DAIRHOOD_DEBUG) @ 160MHz"
+echo "==> compile (debug -DRANGEHOOD_DEBUG) @ 160MHz"
 arduino-cli compile --fqbn "$FQBN" \
-  --build-property "compiler.cpp.extra_flags=-DAIRHOOD_DEBUG" \
+  --build-property "compiler.cpp.extra_flags=-DRANGEHOOD_DEBUG" \
   --output-dir "$BUILD_DIR" \
   .
 

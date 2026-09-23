@@ -11,11 +11,11 @@
 // LOG_D goes to Serial AND the telnet console (port 23) via RemoteLog.
 #define LOG_D(fmt, ...) debugOut.printf_P(PSTR(fmt "\n"), ##__VA_ARGS__);
 
-#define OTA_HOSTNAME "AirHood"
+#define OTA_HOSTNAME "RangeHood"
 #define OTA_PASSWORD "28142814"
 
 // Bump this on each OTA push so the telnet banner unambiguously shows which build is live.
-const char *FW_VERSION = "2026-07-12.5";
+const char *FW_VERSION = "2026-09-23.2";
 
 static ESP8266WebServer httpd(8080); // HTTP API for Home Assistant (parallel to HomeKit)
 static void web_setup();             // defined after the HomeKit helpers it uses
@@ -210,7 +210,7 @@ void setup()
 	// homekit_storage_reset(); // to remove the previous HomeKit pairing storage
 	my_homekit_setup();
 	ota_setup();  // enable wireless firmware updates
-	rlog.begin(); // telnet debug console on port 23 (see log-airhood.sh)
+	rlog.begin(); // telnet debug console on port 23 (see log-rangehood.sh)
 	web_setup();  // HTTP API on :8080 for Home Assistant
 }
 
@@ -583,7 +583,7 @@ void my_homekit_loop()
 	display_check_timeout(t, switch_state);
 
 	// Heartbeat to the telnet console (only when a client is watching) — keeps
-	// log-airhood.sh's `nc -w 15` alive and surfaces live heap/clients/RSSI.
+	// log-rangehood.sh's `nc -w 15` alive and surfaces live heap/clients/RSSI.
 	static uint32_t next_hb_millis = 0;
 	if (rlog.hasClient() && (int32_t)(t - next_hb_millis) >= 0)
 	{
