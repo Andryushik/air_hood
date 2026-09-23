@@ -10,8 +10,8 @@ void my_accessory_identify(homekit_value_t _value)
 // required: ON
 // optional: NAME
 
-// format: bool; HAP section 9.70; write the .setter function to get the switch-event sent from iOS Home APP.
-homekit_characteristic_t cha_switch_on = HOMEKIT_CHARACTERISTIC_(ON, false);
+// format: bool; HAP section 9.70; write the .setter function to get the fan on/off writes from the iOS Home app.
+homekit_characteristic_t cha_fan_on = HOMEKIT_CHARACTERISTIC_(ON, false);
 
 // format: string; HAP section 9.62; max length 64
 homekit_characteristic_t cha_name = HOMEKIT_CHARACTERISTIC_(NAME, "Range Hood");
@@ -32,7 +32,7 @@ homekit_accessory_t *accessories[] = {
       NULL
     }),
     HOMEKIT_SERVICE(FAN, .primary=true, .characteristics=(homekit_characteristic_t*[]) {
-      &cha_switch_on,
+      &cha_fan_on,
       &cha_name,
       NULL
     }),
@@ -51,6 +51,6 @@ homekit_accessory_t *accessories[] = {
   NULL
 };
 
-homekit_server_config_t config = {
+homekit_server_config_t homekit_config = {
     .accessories = accessories,
     .password = "281-42-814"};

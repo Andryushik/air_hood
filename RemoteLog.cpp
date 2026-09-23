@@ -2,8 +2,9 @@
 
 RemoteLog rlog;
 
-void RemoteLog::begin()
+void RemoteLog::begin(const char *fw_version)
 {
+  _fw_version = fw_version;
   _server.begin();
   _server.setNoDelay(true);
 }
@@ -23,7 +24,7 @@ void RemoteLog::loop()
     _clientActive = true;
     _client.setNoDelay(true);
     _client.printf("=== Range Hood fw=%s  ip=%s  reset=%s  uptime=%lus  (console %s %s) ===\r\n",
-                   FW_VERSION,
+                   _fw_version,
                    WiFi.localIP().toString().c_str(),
                    ESP.getResetReason().c_str(),
                    millis() / 1000UL,
@@ -45,7 +46,7 @@ void RemoteLog::loop()
   }
 }
 
-bool RemoteLog::hasClient()
+bool RemoteLog::connected()
 {
   return _clientActive && _client.connected();
 }

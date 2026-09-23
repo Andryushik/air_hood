@@ -14,18 +14,61 @@ static uint32_t display_last_activity = 0;
 // periodic HomeKit latency blip). Reset by display_wake() so waking repaints.
 static bool s_force_redraw = true;
 static bool s_sensor_error_shown = false; // one-shot: wake panel only on ENTERING the sensor-error state
-struct RenderState
+
+static const int16_t NO_READING = INT16_MIN; // a NaN reading, drawn as "--"
+
+// What is on screen, at display resolution: redraw only when this changes.
+struct Frame
 {
   bool fan_on, override_active;
-  bool t_valid, h_valid, bt_valid, bh_valid;
-  int16_t t, h, bt, bh;
-  int8_t wifi_bars; // -1=disconnected, 0..3=bars
+  int16_t t, h, bt, bh; // rounded readings and baselines, or NO_READING
+  int8_t wifi_bars;     // -1 = disconnected, 0..3
 };
-static RenderState s_last = {};
+static Frame s_last = {};
 
-static int16_t round_to_int(float value)
+enum Unit
 {
-  return (int16_t)lroundf(value);
+  CELSIUS,
+  PERCENT
+};
+
+static int16_t rounded(float value)
+{
+  return isnan(value) ? NO_READING : (int16_t)lroundf(value);
+}
+
+// The only copy of the RSSI thresholds. rssi 0 = disconnected.
+static int8_t wifi_bars(int16_t rssi)
+{
+  if (rssi == 0)
+    return -1;
+  if (rssi > -50)
+    return 3;
+  if (rssi > -65)
+    return 2;
+  if (rssi > -80)
+    return 1;
+  return 0;
+}
+
+static Frame frame_for(const HoodStatus &status)
+{
+  Frame f;
+  f.fan_on = status.fan_on;
+  f.override_active = status.override_active;
+  f.t = rounded(status.temperature);
+  f.h = rounded(status.humidity);
+  f.bt = rounded(status.temperature_baseline);
+  f.bh = rounded(status.humidity_baseline);
+  f.wifi_bars = wifi_bars(status.wifi_rssi);
+  return f;
+}
+
+static bool operator==(const Frame &a, const Frame &b)
+{
+  return a.fan_on == b.fan_on && a.override_active == b.override_active &&
+         a.t == b.t && a.h == b.h && a.bt == b.bt && a.bh == b.bh &&
+         a.wifi_bars == b.wifi_bars;
 }
 
 static void draw_fan_icon(int16_t x, int16_t y)
@@ -55,9 +98,9 @@ static void draw_wind_trails(int16_t x, int16_t y)
 }
 
 // WiFi signal icon: 3 arcs + dot, or a crossed-out WiFi shape when disconnected.
-static void draw_wifi_icon(int16_t x, int16_t y, int16_t rssi)
+static void draw_wifi_icon(int16_t x, int16_t y, int8_t bars)
 {
-  if (rssi == 0)
+  if (bars < 0)
   {
     // Disconnected: static WiFi shape with a cross-out line.
     display.fillRect(x + 4, y + 8, 2, 2, SSD1306_WHITE);
@@ -68,15 +111,15 @@ static void draw_wifi_icon(int16_t x, int16_t y, int16_t rssi)
   }
   // Base dot (always shown when connected)
   display.fillRect(x + 4, y + 8, 2, 2, SSD1306_WHITE);
-  if (rssi > -80)
+  if (bars >= 1)
   {
     display.drawCircleHelper(x + 5, y + 9, 4, 0x1, SSD1306_WHITE); // 1 bar
   }
-  if (rssi > -65)
+  if (bars >= 2)
   {
     display.drawCircleHelper(x + 5, y + 9, 7, 0x1, SSD1306_WHITE); // 2 bars
   }
-  if (rssi > -50)
+  if (bars >= 3)
   {
     display.drawCircleHelper(x + 5, y + 9, 10, 0x1, SSD1306_WHITE); // 3 bars
   }
@@ -128,13 +171,68 @@ void display_show_sensor_error()
   display.display();
 }
 
-void display_update(float temperature,
-                    float humidity,
-                    float humidity_baseline,
-                    float temperature_baseline,
-                    bool fan_on,
-                    bool override_active,
-                    int16_t wifi_rssi)
+// One status row: label at x, value at value_x ("--" for NO_READING), then the unit.
+static void print_reading(int16_t x, int16_t value_x, int16_t y, const char *label, int16_t value, Unit unit)
+{
+  display.setCursor(x, y);
+  display.print(label);
+  display.setCursor(value_x, y);
+  if (value == NO_READING)
+  {
+    display.print("--");
+  }
+  else
+  {
+    display.print(value);
+  }
+  if (unit == PERCENT)
+  {
+    display.print(" %");
+    return;
+  }
+  // Place the degree symbol + "C" right after the value so 3-digit or
+  // negative readings don't overlap them.
+  const int16_t cx = display.getCursorX();
+  const int16_t cy = display.getCursorY();
+  display.drawCircle(cx + 3, cy + 1, 1, SSD1306_WHITE);
+  display.setCursor(cx + 6, cy);
+  display.print("C");
+}
+
+static void render(const Frame &f)
+{
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  draw_fan_icon(0, 0);
+  if (f.fan_on)
+  {
+    draw_wind_trails(18, 4);
+  }
+
+  display.setTextSize(2);
+  display.setCursor(40, 1);
+  display.print(f.fan_on ? " ON" : "OFF");
+
+  // Top-right corner: WiFi status is always shown; the MAN indicator is added
+  // (to its left) during manual override so WiFi stays visible in manual mode.
+  draw_wifi_icon(116, 1, f.wifi_bars);
+  if (f.override_active)
+  {
+    display.setTextSize(1);
+    display.setCursor(84, 1); // centred between "ON/OFF" (right ~x74) and WiFi (left ~x111)
+    display.print("MAN");
+  }
+
+  display.setTextSize(1);
+  print_reading(0, 90, 22, "Temperature: ", f.t, CELSIUS);
+  print_reading(0, 90, 34, "Humidity: ", f.h, PERCENT);
+  print_reading(0, 44, 52, "Base T:", f.bt, CELSIUS);
+  print_reading(76, 90, 52, "H:", f.bh, PERCENT);
+
+  display.display();
+}
+
+void display_update(const HoodStatus &status)
 {
   s_sensor_error_shown = false; // a good read/wake -> re-arm the one-shot error wake
 
@@ -143,136 +241,14 @@ void display_update(float temperature,
     return;
   }
 
-  RenderState cur;
-  cur.fan_on = fan_on;
-  cur.override_active = override_active;
-  cur.t_valid = !isnan(temperature);
-  cur.h_valid = !isnan(humidity);
-  cur.bt_valid = !isnan(temperature_baseline);
-  cur.bh_valid = !isnan(humidity_baseline);
-  cur.t = cur.t_valid ? round_to_int(temperature) : 0;
-  cur.h = cur.h_valid ? round_to_int(humidity) : 0;
-  cur.bt = cur.bt_valid ? round_to_int(temperature_baseline) : 0;
-  cur.bh = cur.bh_valid ? round_to_int(humidity_baseline) : 0;
-  if (wifi_rssi == 0)
-    cur.wifi_bars = -1;
-  else if (wifi_rssi > -50)
-    cur.wifi_bars = 3;
-  else if (wifi_rssi > -65)
-    cur.wifi_bars = 2;
-  else if (wifi_rssi > -80)
-    cur.wifi_bars = 1;
-  else
-    cur.wifi_bars = 0;
-
-  if (!s_force_redraw &&
-      cur.fan_on == s_last.fan_on && cur.override_active == s_last.override_active &&
-      cur.t_valid == s_last.t_valid && cur.h_valid == s_last.h_valid &&
-      cur.bt_valid == s_last.bt_valid && cur.bh_valid == s_last.bh_valid &&
-      cur.t == s_last.t && cur.h == s_last.h &&
-      cur.bt == s_last.bt && cur.bh == s_last.bh &&
-      cur.wifi_bars == s_last.wifi_bars)
+  const Frame frame = frame_for(status);
+  if (!s_force_redraw && frame == s_last)
   {
     return; // nothing visible changed — skip the full-frame I2C push
   }
-  s_last = cur;
+  s_last = frame;
   s_force_redraw = false;
-
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  draw_fan_icon(0, 0);
-  if (fan_on)
-  {
-    draw_wind_trails(18, 4);
-  }
-
-  display.setTextSize(2);
-  display.setCursor(40, 1);
-  display.print(fan_on ? " ON" : "OFF");
-
-  // Top-right corner: WiFi status is always shown; the MAN indicator is added
-  // (to its left) during manual override so WiFi stays visible in manual mode.
-  draw_wifi_icon(116, 1, wifi_rssi);
-  if (override_active)
-  {
-    display.setTextSize(1);
-    display.setCursor(84, 1); // centred between "ON/OFF" (right ~x74) and WiFi (left ~x111)
-    display.print("MAN");
-  }
-
-  const bool temp_valid = !isnan(temperature);
-  const bool hum_valid = !isnan(humidity);
-  const bool base_h_valid = !isnan(humidity_baseline);
-  const bool base_t_valid = !isnan(temperature_baseline);
-
-  display.setTextSize(1);
-  display.setCursor(0, 22);
-  display.print("Temperature: ");
-  display.setCursor(90, 22);
-  if (temp_valid)
-  {
-    display.print(round_to_int(temperature));
-  }
-  else
-  {
-    display.print("--");
-  }
-  {
-    // Place the degree symbol + "C" right after the value so 3-digit or
-    // negative readings don't overlap them (fixed positions used to clip).
-    const int16_t x = display.getCursorX();
-    const int16_t y = display.getCursorY();
-    display.drawCircle(x + 3, y + 1, 1, SSD1306_WHITE);
-    display.setCursor(x + 6, y);
-    display.print("C");
-  }
-
-  display.setCursor(0, 34);
-  display.print("Humidity: ");
-  display.setCursor(90, 34);
-  if (hum_valid)
-  {
-    display.print(round_to_int(humidity));
-  }
-  else
-  {
-    display.print("--");
-  }
-  display.print(" %");
-
-  display.setCursor(0, 52);
-  display.print("Base T:");
-  display.setCursor(44, 52);
-  if (base_t_valid)
-  {
-    display.print(round_to_int(temperature_baseline));
-  }
-  else
-  {
-    display.print("--");
-  }
-  {
-    const int16_t x = display.getCursorX();
-    const int16_t y = display.getCursorY();
-    display.drawCircle(x + 3, y + 1, 1, SSD1306_WHITE);
-    display.setCursor(x + 6, y);
-    display.print("C");
-  }
-
-  display.setCursor(76, 52);
-  display.print("H:");
-  display.setCursor(90, 52);
-  if (base_h_valid)
-  {
-    display.print(round_to_int(humidity_baseline));
-  }
-  else
-  {
-    display.print("--");
-  }
-  display.print(" %");
-
-  display.display();
+  render(frame);
 }
 
 void display_wake()

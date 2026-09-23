@@ -14,10 +14,9 @@
 
 set -e
 
-PORT="${1:-192.168.2.151}"
-FQBN="esp8266:esp8266:nodemcuv2:xtal=160,vt=flash,exception=disabled,stacksmash=disabled,ssl=all,mmu=3232,non32xfer=fast,eesz=4M2M,led=2,ip=lm2f,dbg=Disabled,lvl=None____,wipe=none,baud=115200"
+HOST="${1:-192.168.2.151}"
 OTA_PASSWORD="28142814"
-BUILD_DIR="./build/release"
+BUILD_DIR="./build/release" # its own build dir, so the fw_version.h stamp never leaks into other builds
 
 cd "$(dirname "$0")"
 
@@ -30,13 +29,22 @@ if ! grep -q 'homekit_storage_reset() <= 0' "$HOMEKIT_STORAGE"; then
   exit 1
 fi
 
-echo "==> compile (release) @ 160MHz"
-arduino-cli compile --fqbn "$FQBN" \
-  --output-dir "$BUILD_DIR" \
-  .
+# Stamp the build: date.time-commit, plus "-dirty" when tracked files have uncommitted
+# changes. fw_version.h exists only for this compile, so IDE builds report "dev".
+FW_VERSION="$(date +%Y-%m-%d.%H%M)-$(git rev-parse --short HEAD)"
+git diff --quiet HEAD || FW_VERSION="$FW_VERSION-dirty"
+trap 'rm -f fw_version.h' EXIT
+printf '#define FW_VERSION_STAMP "%s"\n' "$FW_VERSION" > fw_version.h
 
-echo "==> OTA upload to $PORT via espota.py (sketch region only — pairing/FS untouched)"
+echo "==> compile $FW_VERSION (board from sketch.yaml)"
+arduino-cli compile --build-path "$BUILD_DIR" .
+
+echo "==> OTA upload to $HOST via espota.py (sketch region only — pairing/FS untouched)"
 # espota talks straight to the device IP:8266 — no mDNS needed (arduino-cli's
 # --protocol network fails with 'port not found' since we run ArduinoOTA.begin(false)).
 ESPOTA=$(ls "$HOME"/Library/Arduino15/packages/esp8266/hardware/esp8266/*/tools/espota.py 2>/dev/null | sort -V | tail -1)
-python3 "$ESPOTA" -i "$PORT" -p 8266 -a "$OTA_PASSWORD" -f "$BUILD_DIR/air_hood.ino.bin" -r
+if [ -z "$ESPOTA" ]; then
+  echo "ERROR: espota.py not found under ~/Library/Arduino15 (is the esp8266 core installed?)" >&2
+  exit 1
+fi
+python3 "$ESPOTA" -i "$HOST" -p 8266 -a "$OTA_PASSWORD" -f "$BUILD_DIR/air_hood.ino.bin" -r

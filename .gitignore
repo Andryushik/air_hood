@@ -22,3 +22,9 @@ build/
 # Logs and temp
 *.log
 *.tmp
+
+# Written by flash-release.sh for one compile
+fw_version.h
+
+# Working plans (research / plan / review notes) stay local
+docs/plan/

@@ -94,7 +94,7 @@ Install via the Arduino Library Manager or Board Manager:
 | `Adafruit BusIO`          | I2C/SPI abstraction (dependency) |
 | `WiFiManager`             | First-boot WiFi captive portal   |
 
-> **Board**: `NodeMCU 1.0 (ESP-12E Module)` (`esp8266:esp8266:nodemcuv2`) — 160 MHz CPU, 4 MB flash with a 2 MB filesystem (`eesz=4M2M`).
+> **Board**: `NodeMCU 1.0 (ESP-12E Module)` (`esp8266:esp8266:nodemcuv2`) — 160 MHz CPU, 4 MB flash with a 2 MB filesystem (`eesz=4M2M`). The full FQBN with all options is in `sketch.yaml`, so `arduino-cli compile .` needs no `--fqbn`.
 
 ### Required library patch
 
@@ -123,7 +123,7 @@ git -C ../libraries/Arduino-HomeKit-ESP8266 apply "$PWD/docs/patches/homekit-sto
 
 ## Updates, Logs and HTTP API
 
-- **Flash over WiFi:** `./flash-release.sh [ip]` (default `192.168.2.151`) builds the sketch and pushes it with `espota.py`. ArduinoOTA runs without mDNS, because HomeKit owns the single mDNS responder, so upload is by IP. OTA rewrites only the sketch, so the HomeKit pairing survives. Bump `FW_VERSION` in `air_hood.ino` so the console banner shows the new build.
+- **Flash over WiFi:** `./flash-release.sh [ip]` (default `192.168.2.151`) builds the sketch and pushes it with `espota.py`. ArduinoOTA runs without mDNS, because HomeKit owns the single mDNS responder, so upload is by IP. OTA rewrites only the sketch, so the HomeKit pairing survives. The script stamps the firmware version (date, time and git commit, `-dirty` with uncommitted changes) and the console banner shows it; builds from the IDE report `dev`.
 - **Logs:** `./log-rangehood.sh [ip]` streams the telnet console (port 23) to `rangehood.log`, including a heartbeat with free heap, HomeKit clients and RSSI every 5 s.
 - **HTTP API** (port 8080, for Home Assistant):
   - `GET /status` → `{"on":bool,"temp":float|null,"hum":float|null,"manual":bool,"rssi":int}`
@@ -240,7 +240,8 @@ air_hood/
 ├── display.cpp/.h     — OLED rendering (Adafruit SSD1306) with burn-in mitigation
 ├── RemoteLog.cpp/.h   — Telnet log console on port 23
 ├── my_accessory.c     — HomeKit accessory definition (Fan + Temp + Humidity services)
-├── wifi_info.h        — WiFiManager connection helper
+├── wifi.h             — WiFiManager connection helper
+├── sketch.yaml        — Board (FQBN) for arduino-cli
 ├── flash-release.sh   — Build and flash over WiFi (espota)
 ├── log-rangehood.sh   — Capture the telnet log to rangehood.log
 ├── docs/patches/      — Required patch for the HomeKit library

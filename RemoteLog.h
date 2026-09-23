@@ -13,19 +13,19 @@
 class RemoteLog : public Print
 {
 public:
-  void begin();
-  void loop(); // call from main loop — accepts one client, drains input
+  void begin(const char *fw_version); // fw_version is shown in the connect banner
+  void loop();                        // call from main loop — accepts one client, drains input
   size_t write(uint8_t c) override;
   size_t write(const uint8_t *buffer, size_t size) override;
-  bool hasClient();
+  bool connected(); // a telnet client is attached
 
 private:
   WiFiServer _server{23};
   WiFiClient _client;
   bool _clientActive = false;
+  const char *_fw_version = "";
 };
 
 extern RemoteLog rlog;
-extern const char *FW_VERSION; // defined in air_hood.ino; shown in the console banner
 
 #endif // REMOTE_LOG_H

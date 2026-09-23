@@ -29,15 +29,21 @@
 #define DISPLAY_OFF_MS 300000 // turn off after 5 min of inactivity (fan OFF)
 #define DISPLAY_DIM_CONTRAST 0x01
 
+// Everything the status screen shows. NAN = no reading / baseline yet.
+struct HoodStatus
+{
+  float temperature;
+  float humidity;
+  float temperature_baseline;
+  float humidity_baseline;
+  bool fan_on;
+  bool override_active;
+  int16_t wifi_rssi; // 0 = disconnected
+};
+
 void display_setup();
 void display_show_sensor_error();
-void display_update(float temperature,
-                    float humidity,
-                    float humidity_baseline,
-                    float temperature_baseline,
-                    bool fan_on,
-                    bool override_active,
-                    int16_t wifi_rssi);
+void display_update(const HoodStatus &status);
 void display_wake();
 void display_check_timeout(uint32_t now, bool fan_on);
 
