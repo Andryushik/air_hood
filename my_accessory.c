@@ -1,8 +1,9 @@
 #include <homekit/homekit.h>
 #include <homekit/characteristics.h>
 
-void my_accessory_identify(homekit_value_t _value) {
-	printf("accessory identify\n");
+void my_accessory_identify(homekit_value_t _value)
+{
+  printf("accessory identify\n");
 }
 
 // Fan (HAP)
@@ -20,37 +21,36 @@ homekit_characteristic_t cha_temp_name = HOMEKIT_CHARACTERISTIC_(NAME, "Temperat
 homekit_characteristic_t cha_hum_name = HOMEKIT_CHARACTERISTIC_(NAME, "Humidity");
 
 homekit_accessory_t *accessories[] = {
-    HOMEKIT_ACCESSORY(.id=1, .category=homekit_accessory_category_fan, .services=(homekit_service_t*[]) {
-        HOMEKIT_SERVICE(ACCESSORY_INFORMATION, .characteristics=(homekit_characteristic_t*[]) {
-            HOMEKIT_CHARACTERISTIC(NAME, "Range Hood"),
-            HOMEKIT_CHARACTERISTIC(MANUFACTURER, "Arduino HomeKit"),
-            HOMEKIT_CHARACTERISTIC(SERIAL_NUMBER, "0123456"),
-            HOMEKIT_CHARACTERISTIC(MODEL, "ESP8266"),
-            HOMEKIT_CHARACTERISTIC(FIRMWARE_REVISION, "1.0"),
-            HOMEKIT_CHARACTERISTIC(IDENTIFY, my_accessory_identify),
-            NULL
-        }),
-		HOMEKIT_SERVICE(FAN, .primary=true, .characteristics=(homekit_characteristic_t*[]){
-			&cha_switch_on,
-			&cha_name,
-			NULL
-		}),
-		HOMEKIT_SERVICE(TEMPERATURE_SENSOR, .characteristics=(homekit_characteristic_t*[]){
-			&cha_current_temperature,
-			&cha_temp_name,
-			NULL
-		}),
-		HOMEKIT_SERVICE(HUMIDITY_SENSOR, .characteristics=(homekit_characteristic_t*[]){
-			&cha_current_humidity,
-			&cha_hum_name,
-			NULL
-		}),
-        NULL
+  HOMEKIT_ACCESSORY(.id=1, .category=homekit_accessory_category_fan, .services=(homekit_service_t*[]) {
+    HOMEKIT_SERVICE(ACCESSORY_INFORMATION, .characteristics=(homekit_characteristic_t*[]) {
+      HOMEKIT_CHARACTERISTIC(NAME, "Range Hood"),
+      HOMEKIT_CHARACTERISTIC(MANUFACTURER, "Arduino HomeKit"),
+      HOMEKIT_CHARACTERISTIC(SERIAL_NUMBER, "0123456"),
+      HOMEKIT_CHARACTERISTIC(MODEL, "ESP8266"),
+      HOMEKIT_CHARACTERISTIC(FIRMWARE_REVISION, "1.0"),
+      HOMEKIT_CHARACTERISTIC(IDENTIFY, my_accessory_identify),
+      NULL
+    }),
+    HOMEKIT_SERVICE(FAN, .primary=true, .characteristics=(homekit_characteristic_t*[]) {
+      &cha_switch_on,
+      &cha_name,
+      NULL
+    }),
+    HOMEKIT_SERVICE(TEMPERATURE_SENSOR, .characteristics=(homekit_characteristic_t*[]) {
+      &cha_current_temperature,
+      &cha_temp_name,
+      NULL
+    }),
+    HOMEKIT_SERVICE(HUMIDITY_SENSOR, .characteristics=(homekit_characteristic_t*[]) {
+      &cha_current_humidity,
+      &cha_hum_name,
+      NULL
     }),
     NULL
+  }),
+  NULL
 };
 
 homekit_server_config_t config = {
-		.accessories = accessories,
-		.password = "281-42-814"
-};
+    .accessories = accessories,
+    .password = "281-42-814"};

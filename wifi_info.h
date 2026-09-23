@@ -13,23 +13,23 @@
 
 static inline void wifi_connect()
 {
-	WiFi.persistent(false);
-	WiFi.mode(WIFI_STA);
-	WiFi.setSleepMode(WIFI_NONE_SLEEP); // keep radio awake — HomeKit needs low latency
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleepMode(WIFI_NONE_SLEEP); // keep radio awake — HomeKit needs low latency
 
-	WiFiManager wm;
-	wm.setWiFiAutoReconnect(true);
-	wm.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
+  WiFiManager wm;
+  wm.setWiFiAutoReconnect(true);
+  wm.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
 
-	if (!wm.autoConnect("RangeHood-Setup"))
-	{
-		Serial.println("WiFi config failed, restarting...");
-		delay(1000);
-		ESP.restart();
-	}
+  if (!wm.autoConnect("RangeHood-Setup"))
+  {
+    Serial.println("WiFi config failed, restarting...");
+    delay(1000);
+    ESP.restart();
+  }
 
-	WiFi.setSleepMode(WIFI_NONE_SLEEP); // re-assert; WiFiManager may have toggled it
-	Serial.printf("WiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
+  WiFi.setSleepMode(WIFI_NONE_SLEEP); // re-assert; WiFiManager may have toggled it
+  Serial.printf("WiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
 }
 
 #endif

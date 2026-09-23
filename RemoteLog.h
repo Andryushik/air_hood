@@ -13,16 +13,16 @@
 class RemoteLog : public Print
 {
 public:
-	void begin();
-	void loop(); // call from main loop — accepts one client, drains input
-	size_t write(uint8_t c) override;
-	size_t write(const uint8_t *buffer, size_t size) override;
-	bool hasClient();
+  void begin();
+  void loop(); // call from main loop — accepts one client, drains input
+  size_t write(uint8_t c) override;
+  size_t write(const uint8_t *buffer, size_t size) override;
+  bool hasClient();
 
 private:
-	WiFiServer _server{23};
-	WiFiClient _client;
-	bool _clientActive = false;
+  WiFiServer _server{23};
+  WiFiClient _client;
+  bool _clientActive = false;
 };
 
 extern RemoteLog rlog;
