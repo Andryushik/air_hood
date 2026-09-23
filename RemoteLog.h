@@ -26,7 +26,6 @@ private:
 };
 
 extern RemoteLog rlog;
-extern Print &debugOut;        // LOG_D target (Serial + optional telnet)
 extern const char *FW_VERSION; // defined in air_hood.ino; shown in the console banner
 
 #endif // REMOTE_LOG_H

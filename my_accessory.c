@@ -25,7 +25,7 @@ homekit_accessory_t *accessories[] = {
             HOMEKIT_CHARACTERISTIC(NAME, "Range Hood"),
             HOMEKIT_CHARACTERISTIC(MANUFACTURER, "Arduino HomeKit"),
             HOMEKIT_CHARACTERISTIC(SERIAL_NUMBER, "0123456"),
-            HOMEKIT_CHARACTERISTIC(MODEL, "ESP8266/ESP32"),
+            HOMEKIT_CHARACTERISTIC(MODEL, "ESP8266"),
             HOMEKIT_CHARACTERISTIC(FIRMWARE_REVISION, "1.0"),
             HOMEKIT_CHARACTERISTIC(IDENTIFY, my_accessory_identify),
             NULL

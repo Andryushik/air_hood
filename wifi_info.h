@@ -1,15 +1,9 @@
 #ifndef WIFI_INFO_H_
 #define WIFI_INFO_H_
 
-#if defined(ESP8266)
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
-#elif defined(ESP32)
-#include <WiFi.h>
-#include <DNSServer.h>
-#include <WebServer.h>
-#endif
 
 #include <WiFiManager.h>
 
@@ -31,9 +25,7 @@ static inline void wifi_connect()
 	{
 		Serial.println("WiFi config failed, restarting...");
 		delay(1000);
-#if defined(ESP8266) || defined(ESP32)
 		ESP.restart();
-#endif
 	}
 
 	WiFi.setSleepMode(WIFI_NONE_SLEEP); // re-assert; WiFiManager may have toggled it

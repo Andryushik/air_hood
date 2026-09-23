@@ -9,6 +9,9 @@
 #ifndef OLED_SCL
 #define OLED_SCL D1
 #endif
+// Shared I2C bus (OLED + SHT31). Every Wire.begin() resets the ESP8266 clock-stretch
+// limit to 150 ms, so set this again after anything that calls Wire.begin().
+#define I2C_STRETCH_LIMIT_US 2000
 #ifndef SCREEN_WIDTH
 #define SCREEN_WIDTH 128
 #endif

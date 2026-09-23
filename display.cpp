@@ -16,13 +16,12 @@ static bool s_force_redraw = true;
 static bool s_sensor_error_shown = false; // one-shot: wake panel only on ENTERING the sensor-error state
 struct RenderState
 {
-    bool valid;
     bool fan_on, override_active;
     bool t_valid, h_valid, bt_valid, bh_valid;
     int16_t t, h, bt, bh;
-    int8_t wifi_bars; // -1=disconnected, 0..3=bars, 99=hidden (MAN override)
+    int8_t wifi_bars; // -1=disconnected, 0..3=bars
 };
-static RenderState s_last = {false, false, false, false, false, false, false, 0, 0, 0, 0, 0};
+static RenderState s_last = {};
 
 static int16_t round_to_int(float value)
 {
@@ -86,8 +85,9 @@ static void draw_wifi_icon(int16_t x, int16_t y, int16_t rssi)
 void display_setup()
 {
     Wire.begin(OLED_SDA, OLED_SCL);
-    Wire.setClockStretchLimit(2000); // cap a wedged-bus stall at ~2ms
-    if (display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS))
+    Wire.setClockStretchLimit(I2C_STRETCH_LIMIT_US); // cap a wedged-bus stall at ~2 ms
+    // periphBegin=false: the default would call Wire.begin() again and reset the limit.
+    if (display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS, true, false))
     {
         display_ok = true;
         display_last_activity = millis();
@@ -144,7 +144,6 @@ void display_update(float temperature,
     }
 
     RenderState cur;
-    cur.valid = true;
     cur.fan_on = fan_on;
     cur.override_active = override_active;
     cur.t_valid = !isnan(temperature);
@@ -166,7 +165,7 @@ void display_update(float temperature,
     else
         cur.wifi_bars = 0;
 
-    if (!s_force_redraw && s_last.valid &&
+    if (!s_force_redraw &&
         cur.fan_on == s_last.fan_on && cur.override_active == s_last.override_active &&
         cur.t_valid == s_last.t_valid && cur.h_valid == s_last.h_valid &&
         cur.bt_valid == s_last.bt_valid && cur.bh_valid == s_last.bh_valid &&
@@ -310,10 +309,6 @@ void display_check_timeout(uint32_t now, bool fan_on)
     }
 
     const int32_t idle = (int32_t)(now - display_last_activity);
-    if (idle < 0)
-    {
-        return;
-    }
 
     if (display_on && !display_dimmed && idle >= (int32_t)DISPLAY_DIM_MS)
     {

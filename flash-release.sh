@@ -21,6 +21,15 @@ BUILD_DIR="./build/release"
 
 cd "$(dirname "$0")"
 
+# The HomeKit library must carry docs/patches/homekit-storage-compact.patch, or the
+# accessory eventually wipes its own pairing (see README "Required library patch").
+HOMEKIT_STORAGE="$(arduino-cli config get directories.user)/libraries/Arduino-HomeKit-ESP8266/src/storage.c"
+if ! grep -q 'homekit_storage_reset() <= 0' "$HOMEKIT_STORAGE"; then
+  echo "ERROR: HomeKit library is not patched: $HOMEKIT_STORAGE" >&2
+  echo "Apply: git -C \"$(dirname "$HOMEKIT_STORAGE")/..\" apply \"$PWD/docs/patches/homekit-storage-compact.patch\"" >&2
+  exit 1
+fi
+
 echo "==> compile (release) @ 160MHz"
 arduino-cli compile --fqbn "$FQBN" \
   --output-dir "$BUILD_DIR" \

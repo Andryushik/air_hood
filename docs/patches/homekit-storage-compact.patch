@@ -1,3 +1,27 @@
+Fix: Arduino-HomeKit-ESP8266 v1.2.0 (Mixiaoxiao master @ 8a8e1a0) wipes its own
+HomeKit pairing storage.
+
+Symptom: after weeks of normal use the accessory comes back from a reboot with a
+new accessory ID and unpaired (mDNS TXT sf=1). Apple Home keeps the old pairing,
+shows "No Response" for good, and rebooting doesn't help.
+
+Cause, in compact_data() (src/storage.c). Compaction runs when a pairing is added
+or updated and no empty slot is left; removed/updated pairings are zeroed, not
+erased, so free slots only ever go down.
+  1. homekit_storage_reset() returns 1 after a successful reformat, but it was
+     treated as failure, so compact_data() returned after erasing the sector and
+     lost the accessory ID, key and all pairings. The next boot can't read the ID
+     and homekit_server_init() generates a new one.
+  2. The buffer was indexed with PAIRINGS_ADDR (an absolute flash address) instead
+     of PAIRINGS_OFFSET: an out-of-bounds write.
+Upstream maximkulkin/esp-homekit fixed both the same way. Found 2026-09-23 after
+the second "offline" incident (the first was in July).
+
+Apply once, from the sketch folder:
+  git -C ../libraries/Arduino-HomeKit-ESP8266 apply "$PWD/docs/patches/homekit-storage-compact.patch"
+Check it's applied (succeeds only then):
+  git -C ../libraries/Arduino-HomeKit-ESP8266 apply --check -R "$PWD/docs/patches/homekit-storage-compact.patch"
+
 diff --git a/src/storage.c b/src/storage.c
 index d6f69a7..ca3f8d4 100644
 --- a/src/storage.c
@@ -15,7 +39,7 @@ index d6f69a7..ca3f8d4 100644
 @@ -241,7 +242,9 @@ static int compact_data() {
          return 0;
      }
-
+ 
 -    if (homekit_storage_reset()) {
 +    // reset() returns 1 after a successful reformat; only <= 0 is a failure. The old
 +    // `if (reset())` bailed out after erasing, losing the accessory ID/key/pairings.

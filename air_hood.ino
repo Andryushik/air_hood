@@ -9,22 +9,21 @@
 #include "RemoteLog.h"
 
 // LOG_D goes to Serial AND the telnet console (port 23) via RemoteLog.
-#define LOG_D(fmt, ...) debugOut.printf_P(PSTR(fmt "\n"), ##__VA_ARGS__);
+#define LOG_D(fmt, ...) rlog.printf_P(PSTR(fmt "\n"), ##__VA_ARGS__)
 
 #define OTA_HOSTNAME "RangeHood"
 #define OTA_PASSWORD "28142814"
 
 // Bump this on each OTA push so the telnet banner unambiguously shows which build is live.
-const char *FW_VERSION = "2026-09-23.2";
+const char *FW_VERSION = "2026-09-23.4";
 
 static ESP8266WebServer httpd(8080); // HTTP API for Home Assistant (parallel to HomeKit)
-static void web_setup();             // defined after the HomeKit helpers it uses
+static void web_setup();						 // defined after the HomeKit helpers it uses
 
 #define PIN_SWITCH D6
 #define PIN_TOUCH D5 // TTP223B capacitive touch sensor (active HIGH)
 #define BUTTON_DEBOUNCE_MS 50
 #define SENSOR_READ_INTERVAL_MS 30000
-#define HEAP_LOG_INTERVAL_MS 60000
 #define AUTO_MIN_ON_MS (5UL * 60UL * 1000UL)
 #define AUTO_MIN_OFF_MS (2UL * 60UL * 1000UL)
 // After the air returns to normal, keep running until it has stayed calm for
@@ -53,9 +52,8 @@ static void web_setup();             // defined after the HomeKit helpers it use
 
 #define SAFETY_MAX_ON_MS (3UL * 60UL * 60UL * 1000UL)
 #define BASELINE_SAVE_INTERVAL_MS (15UL * 60UL * 1000UL)
-#define BASELINE_MAX_AGE_MS (4UL * 60UL * 60UL * 1000UL)
-#define SENSOR_FAIL_TIMEOUT_MS (5UL * 60UL * 1000UL)
-#define SENSOR_FAIL_FAN_ON_GRACE_MS (30UL * 60UL * 1000UL)
+// Sensor down this long while the fan is ON -> switch the fan OFF (a dead sensor never reports "calm").
+#define SENSOR_FAIL_FAN_OFF_MS (35UL * 60UL * 1000UL)
 // Faster baseline alphas for the first 5 minutes after fan turns OFF.
 #define BASELINE_FAST_PHASE_MS (5UL * 60UL * 1000UL)
 #define HUMIDITY_BASELINE_ALPHA_UP_FAST 0.10f
@@ -67,8 +65,8 @@ struct BaselineData
 {
 	float humidity_baseline;
 	float temperature_baseline;
-	uint32_t saved_millis;
-	uint32_t magic; // simple validity marker
+	uint32_t reserved; // was saved_millis; kept so existing baseline files still load
+	uint32_t magic;		 // simple validity marker
 };
 
 static const uint32_t BASELINE_MAGIC = 0xA1B2C3D4;
@@ -95,9 +93,7 @@ static void baselines_load(float &hum_base, float &temp_base)
 	}
 	f.close();
 
-	// NOTE: millis() resets on reboot, so the old saved-vs-current millis() age
-	// check underflowed and discarded almost every restore. Ambient baselines
-	// stay useful across a reboot, so gate only on value sanity, not age.
+	// No age check: millis() restarts at every boot, so it can't tell how old the file is.
 	if (!baseline_values_valid(data.humidity_baseline, data.temperature_baseline))
 	{
 		LOG_D("Baselines contain invalid values, discarding");
@@ -117,7 +113,7 @@ static void baselines_save(float hum_base, float temp_base)
 	BaselineData data;
 	data.humidity_baseline = hum_base;
 	data.temperature_baseline = temp_base;
-	data.saved_millis = millis();
+	data.reserved = 0;
 	data.magic = BASELINE_MAGIC;
 
 	File f = LittleFS.open(BASELINES_PATH, "w");
@@ -153,25 +149,18 @@ static void i2c_recover()
 		delayMicroseconds(5);
 	}
 	Wire.begin(OLED_SDA, OLED_SCL);
-	Wire.setClockStretchLimit(2000); // cap a wedged-bus stall at ~2ms
+	Wire.setClockStretchLimit(I2C_STRETCH_LIMIT_US); // sensor_setup() re-applies it after sht31.begin()
 }
 
 static void sensor_setup()
 {
 	// SHT31-D default addresses: 0x44 (ADDR low) or 0x45 (ADDR high)
-	if (sht31.begin(0x44))
+	sht31_ok = sht31.begin(0x44) || sht31.begin(0x45);
+	// sht31.begin() calls Wire.begin(), which resets the clock-stretch limit to 150 ms.
+	Wire.setClockStretchLimit(I2C_STRETCH_LIMIT_US);
+	if (!sht31_ok)
 	{
-		sht31_ok = true;
-	}
-	else if (sht31.begin(0x45))
-	{
-		sht31_ok = true;
-	}
-	else
-	{
-		sht31_ok = false;
 		LOG_D("SHT31-D not found on I2C (0x44/0x45)");
-		display_show_sensor_error();
 		return;
 	}
 
@@ -180,15 +169,18 @@ static void sensor_setup()
 }
 
 // OTA over WiFi (espota). HomeKit owns the single MDNS responder, so start
-// ArduinoOTA with useMDNS=false and upload by IP (see flash-*.sh). espota
+// ArduinoOTA with useMDNS=false and upload by IP (see flash-release.sh). espota
 // writes only the sketch region — the HomeKit pairing/FS sectors are untouched.
 static void ota_setup()
 {
 	ArduinoOTA.setHostname(OTA_HOSTNAME);
 	ArduinoOTA.setPassword(OTA_PASSWORD);
-	ArduinoOTA.onStart([]() { LOG_D("OTA: start"); });
-	ArduinoOTA.onEnd([]() { LOG_D("OTA: done, rebooting"); });
-	ArduinoOTA.onError([](ota_error_t e) { LOG_D("OTA: error %u", (unsigned)e); });
+	ArduinoOTA.onStart([]()
+										 { LOG_D("OTA: start"); });
+	ArduinoOTA.onEnd([]()
+									 { LOG_D("OTA: done, rebooting"); });
+	ArduinoOTA.onError([](ota_error_t e)
+										 { LOG_D("OTA: error %u", (unsigned)e); });
 	ArduinoOTA.begin(false);
 	LOG_D("Firmware %s | OTA ready: host=%s ip=%s (upload by IP)", FW_VERSION, OTA_HOSTNAME,
 				WiFi.localIP().toString().c_str());
@@ -206,12 +198,16 @@ void setup()
 	touch_last_level = digitalRead(PIN_TOUCH);
 	touch_last_change_millis = millis();
 	sensor_setup();
+	if (!sht31_ok)
+	{
+		display_show_sensor_error(); // stays visible during a slow WiFi connect / setup portal
+	}
 	wifi_connect(); // in wifi_info.h
 	// homekit_storage_reset(); // to remove the previous HomeKit pairing storage
 	my_homekit_setup();
-	ota_setup();  // enable wireless firmware updates
+	ota_setup();	// enable wireless firmware updates
 	rlog.begin(); // telnet debug console on port 23 (see log-rangehood.sh)
-	web_setup();  // HTTP API on :8080 for Home Assistant
+	web_setup();	// HTTP API on :8080 for Home Assistant
 }
 
 void loop()
@@ -231,21 +227,19 @@ extern "C" homekit_characteristic_t cha_switch_on;
 extern "C" homekit_characteristic_t cha_current_temperature;
 extern "C" homekit_characteristic_t cha_current_humidity;
 
-static uint32_t next_heap_millis = 0;
 static uint32_t next_sensor_millis = 0;
 static uint32_t next_baseline_save_millis = 0;
 static float last_temperature = NAN;
 static float last_humidity = NAN;
 static bool switch_state = false;
 static uint32_t last_fan_change_millis = 0;
-static uint32_t last_fan_off_millis = 0;
 static float humidity_baseline = NAN;
 static float temperature_baseline = NAN;
 static uint32_t manual_override_until_millis = 0;
 static uint32_t sensor_fail_since_millis = 0;
 static uint32_t last_touch_millis = 0;
 static float last_temperature_for_rise = NAN; // per-sample temp-rise trigger reference
-static uint32_t env_calm_since_millis = 0;     // when air first went calm while fan ON (0 = not calm)
+static uint32_t env_calm_since_millis = 0;		// when air first went calm while fan ON (0 = not calm)
 
 static bool manual_override_active(uint32_t now)
 {
@@ -267,10 +261,6 @@ void apply_switch_state(bool on, bool notify, const char *reason)
 	{
 		const uint32_t now = millis();
 		last_fan_change_millis = now;
-		if (!on)
-		{
-			last_fan_off_millis = now;
-		}
 		env_calm_since_millis = 0; // reset the auto-off overrun countdown on any state change
 	}
 	if (notify && changed)
@@ -321,36 +311,33 @@ void poll_touch(uint32_t now)
 	}
 }
 
+// Both readings are valid here: report_environment() only calls this after a good read.
 void update_switch_from_environment(float humidity, float temperature, uint32_t now)
 {
-	if (isnan(humidity))
-	{
-		return;
-	}
-
 	// Track baselines only while fan is OFF (ambient conditions).
 	// Use faster alphas for the first 5 minutes after fan turns OFF
 	// to quickly re-acquire true ambient after a long cooking session.
 	if (!switch_state)
 	{
-		const bool fast_phase = (now - last_fan_off_millis) < BASELINE_FAST_PHASE_MS;
+		// While OFF, the last state change was the switch-off (or boot).
+		const bool fast_phase = (now - last_fan_change_millis) < BASELINE_FAST_PHASE_MS;
 
-		if (isnan(humidity_baseline) && !isnan(humidity))
+		if (isnan(humidity_baseline))
 		{
 			humidity_baseline = min(humidity, HUMIDITY_ABS_ON_MIN); // clamp seed so a hot start can't lock out auto-ON
 		}
-		else if (!isnan(humidity))
+		else
 		{
 			const float alpha_up = fast_phase ? HUMIDITY_BASELINE_ALPHA_UP_FAST : HUMIDITY_BASELINE_ALPHA_UP;
 			const float alpha = (humidity > humidity_baseline) ? alpha_up : HUMIDITY_BASELINE_ALPHA_DOWN;
 			humidity_baseline = humidity_baseline + (humidity - humidity_baseline) * alpha;
 		}
 
-		if (isnan(temperature_baseline) && !isnan(temperature))
+		if (isnan(temperature_baseline))
 		{
 			temperature_baseline = min(temperature, TEMP_ABS_ON_MIN); // clamp seed (see humidity)
 		}
-		else if (!isnan(temperature))
+		else
 		{
 			const float alpha_up = fast_phase ? TEMP_BASELINE_ALPHA_UP_FAST : TEMP_BASELINE_ALPHA_UP;
 			const float alpha = (temperature > temperature_baseline) ? alpha_up : TEMP_BASELINE_ALPHA_DOWN;
@@ -360,12 +347,8 @@ void update_switch_from_environment(float humidity, float temperature, uint32_t 
 
 	// Rise tracker is file-scope now and reset on sensor recovery (report_environment),
 	// so it stays current after manual override but never spans a sensor outage.
-	const bool temp_valid = !isnan(temperature);
-	const float temp_rise = (temp_valid && !isnan(last_temperature_for_rise)) ? (temperature - last_temperature_for_rise) : 0.0f;
-	if (temp_valid)
-	{
-		last_temperature_for_rise = temperature;
-	}
+	const float temp_rise = isnan(last_temperature_for_rise) ? 0.0f : temperature - last_temperature_for_rise;
+	last_temperature_for_rise = temperature;
 
 	// Safety: force fan OFF after 3 hours continuous operation
 	const uint32_t since_change = now - last_fan_change_millis;
@@ -387,14 +370,14 @@ void update_switch_from_environment(float humidity, float temperature, uint32_t 
 	const float hum_off_threshold = hum_base + HUMIDITY_DELTA_OFF;
 
 	const float temp_base = isnan(temperature_baseline) ? temperature : temperature_baseline;
-	const float temp_on_threshold = temp_valid ? max(TEMP_ABS_ON_MIN, temp_base + TEMP_DELTA_ON) : NAN;
-	const float temp_off_threshold = temp_valid ? (temp_base + TEMP_DELTA_OFF) : NAN;
+	const float temp_on_threshold = max(TEMP_ABS_ON_MIN, temp_base + TEMP_DELTA_ON);
+	const float temp_off_threshold = temp_base + TEMP_DELTA_OFF;
 
 	if (!switch_state)
 	{
 		if (since_change >= AUTO_MIN_OFF_MS &&
 				(humidity >= hum_on_threshold ||
-				 (temp_valid && (temperature >= temp_on_threshold || temp_rise >= TEMP_RISE_ON_DELTA))))
+				 temperature >= temp_on_threshold || temp_rise >= TEMP_RISE_ON_DELTA))
 		{
 			const char *reason = (humidity >= hum_on_threshold) ? "humidity rise"
 																													: ((temp_rise >= TEMP_RISE_ON_DELTA) ? "temp rise" : "temp high");
@@ -404,7 +387,7 @@ void update_switch_from_environment(float humidity, float temperature, uint32_t 
 	else
 	{
 		const bool humidity_ok = humidity <= hum_off_threshold;
-		const bool temperature_ok = !temp_valid || temperature <= temp_off_threshold;
+		const bool temperature_ok = temperature <= temp_off_threshold;
 		const bool env_calm = humidity_ok && temperature_ok;
 		if (!env_calm)
 		{
@@ -438,11 +421,7 @@ void report_environment()
 	if (!sht31_ok)
 	{
 		i2c_recover();
-		sensor_setup();
-		if (!sht31_ok)
-		{
-			display_show_sensor_error();
-		}
+		sensor_setup(); // on failure the read below fails and draws the error screen once
 	}
 
 	float temperature, humidity;
@@ -461,14 +440,10 @@ void report_environment()
 		{
 			sensor_fail_since_millis = t;
 		}
-		const uint32_t fail_duration = t - sensor_fail_since_millis;
-		if (fail_duration >= SENSOR_FAIL_TIMEOUT_MS && switch_state)
+		if (switch_state && t - sensor_fail_since_millis >= SENSOR_FAIL_FAN_OFF_MS)
 		{
-			if (fail_duration >= SENSOR_FAIL_TIMEOUT_MS + SENSOR_FAIL_FAN_ON_GRACE_MS)
-			{
-				LOG_D("Sensor failed >35min with fan ON, forcing OFF");
-				apply_switch_state(false, true, "sensor timeout");
-			}
+			LOG_D("Sensor failed >35min with fan ON, forcing OFF");
+			apply_switch_state(false, true, "sensor timeout");
 		}
 		return;
 	}
@@ -524,7 +499,8 @@ static void http_set_fan(bool on)
 
 static void web_setup()
 {
-	httpd.on("/status", HTTP_GET, []() {
+	httpd.on("/status", HTTP_GET, []()
+					 {
 		char tbuf[16], hbuf[16];
 		if (isnan(last_temperature))
 			strcpy(tbuf, "null");
@@ -540,17 +516,17 @@ static void web_setup()
 						 switch_state ? "true" : "false", tbuf, hbuf,
 						 manual_override_active(millis()) ? "true" : "false",
 						 (int)get_wifi_rssi());
-		httpd.send(200, "application/json", buf);
-	});
-	httpd.on("/on", HTTP_POST, []() {
+		httpd.send(200, "application/json", buf); });
+	httpd.on("/on", HTTP_POST, []()
+					 {
 		http_set_fan(true);
-		httpd.send(200, "text/plain", "OK");
-	});
-	httpd.on("/off", HTTP_POST, []() {
+		httpd.send(200, "text/plain", "OK"); });
+	httpd.on("/off", HTTP_POST, []()
+					 {
 		http_set_fan(false);
-		httpd.send(200, "text/plain", "OK");
-	});
-	httpd.onNotFound([]() { httpd.send(404, "text/plain", "Not found"); });
+		httpd.send(200, "text/plain", "OK"); });
+	httpd.onNotFound([]()
+									 { httpd.send(404, "text/plain", "Not found"); });
 	httpd.begin();
 	LOG_D("HTTP API on :8080 (/status, POST /on, /off)");
 }
@@ -567,7 +543,6 @@ void my_homekit_setup()
 	apply_switch_state(cha_switch_on.value.bool_value, false, NULL);
 	const uint32_t now = millis();
 	last_fan_change_millis = now;
-	last_fan_off_millis = now;
 	next_sensor_millis = now;
 	next_baseline_save_millis = now + BASELINE_SAVE_INTERVAL_MS;
 }
@@ -576,7 +551,7 @@ void my_homekit_loop()
 {
 	const uint32_t t = millis();
 	httpd.handleClient(); // HTTP API for Home Assistant (non-blocking)
-	rlog.loop();          // accept/drain telnet console clients
+	rlog.loop();					// accept/drain telnet console clients
 	poll_touch(t);
 	arduino_homekit_loop();
 	report_environment();
@@ -601,12 +576,5 @@ void my_homekit_loop()
 		{
 			baselines_save(humidity_baseline, temperature_baseline);
 		}
-	}
-
-	if ((int32_t)(t - next_heap_millis) >= 0)
-	{
-		next_heap_millis = t + HEAP_LOG_INTERVAL_MS;
-		LOG_D("Free heap: %d, HomeKit clients: %d",
-					ESP.getFreeHeap(), arduino_homekit_connected_clients_count());
 	}
 }

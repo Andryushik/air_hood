@@ -1,7 +1,6 @@
 #include "RemoteLog.h"
 
 RemoteLog rlog;
-Print &debugOut = rlog; // LOG_D routes here (Serial + optional telnet client)
 
 void RemoteLog::begin()
 {
@@ -16,8 +15,10 @@ void RemoteLog::loop()
 	if (_server.hasClient())
 	{
 		WiFiClient incoming = _server.accept();
+		// stop() without an argument waits up to 300 ms for acks; a stuck client
+		// must not stall the HomeKit loop, so give it 1 ms.
 		if (_clientActive)
-			_client.stop();
+			_client.stop(1);
 		_client = incoming;
 		_clientActive = true;
 		_client.setNoDelay(true);
@@ -32,7 +33,7 @@ void RemoteLog::loop()
 	// Reap a client that has closed so write() stops targeting a dead socket.
 	if (_clientActive && !_client.connected())
 	{
-		_client.stop();
+		_client.stop(1);
 		_clientActive = false;
 	}
 
